@@ -43,13 +43,26 @@ subtitles-tool/
 pnpm install
 ```
 
-2. 構建項目：
+2. 配置環境變量（可選）：
+```bash
+# 複製 API 環境變量模板
+cp api/env.template api/.env
+
+# 編輯 api/.env 文件，調整配置參數
+# 主要配置項目：
+# - MAX_CONCURRENT_TASKS: 轉錄任務並發數（默認 3）
+# - MAX_CONCURRENT_CONVERT_TASKS: 轉換任務並發數（默認 2）
+# - WHISPER_MODEL_SIZE: Whisper 模型大小（默認 base）
+# - WHISPER_DEVICE: 運行設備（cpu/cuda/mps）
+```
+
+3. 構建項目：
 ```bash
 # 構建前端和安裝 API 的 Python 依賴
 pnpm run build:all
 ```
 
-3. 啟動開發環境：
+4. 啟動開發環境：
 ```bash
 # 同時啟動前端和 API 服務（開發模式）
 pnpm run dev:all
@@ -127,6 +140,63 @@ curl -X POST "http://localhost:8010/transcribe/" -F "file=@path/to/audio.mp3"
 pnpm install            # 從 root 安裝所有 workspace 相依
 pnpm run dev:fe         # 啟動前端（http://localhost:8002）
 ```
+
+## ⚙️ 環境變量配置
+
+項目提供了 API 環境變量模板文件：
+- `api/env.template`：API 配置模板
+
+### 主要配置項目
+
+#### 並發控制
+```bash
+# 轉錄任務並發數（默認：3）
+MAX_CONCURRENT_TASKS=3
+
+# 轉換任務並發數（默認：2）
+MAX_CONCURRENT_CONVERT_TASKS=2
+```
+
+#### Whisper 模型配置
+```bash
+# 模型大小：tiny, base, small, medium, large, large-v2, large-v3
+WHISPER_MODEL_SIZE=base
+
+# 運行設備：cpu, cuda (NVIDIA GPU), mps (Apple Silicon)
+WHISPER_DEVICE=cpu
+```
+
+#### 文件處理
+```bash
+# 最大文件大小（字節，默認 100MB）
+MAX_FILE_SIZE=104857600
+
+# 分片上傳大小（字節，默認 5MB）
+CHUNK_SIZE=5242880
+```
+
+#### 音頻處理
+```bash
+# 默認啟用降噪
+DEFAULT_DENOISE=false
+
+# 音頻質量：high (320kbps), medium (192kbps), low (128kbps)
+DEFAULT_AUDIO_QUALITY=medium
+
+# 默認音頻格式
+DEFAULT_AUDIO_FORMAT=mp3
+```
+
+### 使用方式
+
+1. 複製模板文件：
+```bash
+cp api/env.template api/.env
+```
+
+2. 編輯 `api/.env` 文件，取消註釋並設置需要的變量
+
+3. 重啟服務以應用新配置
 
 ## 🧪 測試
 
