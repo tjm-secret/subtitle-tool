@@ -32,6 +32,13 @@ import {
   Sparkles
 } from "lucide-react"
 import AudioCutter from "@/components/AudioCutter"
+import {
+  buildMeetingNotes,
+  buildMeetingNotesDocxBlob,
+  buildMeetingNotesFilename,
+  formatMeetingNotesForExport,
+  getMeetingNotesViewState,
+} from "@/lib/meeting-notes.js"
 
 interface TranscriptionResult {
   srt?: string
@@ -71,6 +78,13 @@ interface HTTPValidationError {
   detail: ValidationError[]
 }
 
+interface MeetingNotesDraft {
+  summary: string
+  discussion_points: string[]
+  decisions: string[]
+  action_items: string[]
+}
+
 export default function AudioTranscriptionPage() {
   const [file, setFile] = useState<File | null>(null)
   const [language, setLanguage] = useState<string>("auto")
@@ -79,7 +93,8 @@ export default function AudioTranscriptionPage() {
   const [result, setResult] = useState<TranscriptionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
-  const [activeTab, setActiveTab] = useState<'txt' | 'srt'>('txt')
+  const [workspaceTab, setWorkspaceTab] = useState<"transcribe" | "meeting-notes">("transcribe")
+  const [activeResultTab, setActiveResultTab] = useState<"txt" | "srt">("txt")
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isConvertingTraditional, setIsConvertingTraditional] = useState(false)
   
@@ -87,6 +102,12 @@ export default function AudioTranscriptionPage() {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
   const [taskProgress, setTaskProgress] = useState<number>(0)
   const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([])
+  const [meetingNotes, setMeetingNotes] = useState<MeetingNotesDraft | null>(null)
+  const [isPreparingMeetingNotes, setIsPreparingMeetingNotes] = useState(false)
+  const meetingNotesViewState = getMeetingNotesViewState({
+    transcript: result?.txt ?? "",
+    meetingNotes,
+  })
 
   // 常用語言列表
   const commonLanguages = [
@@ -244,6 +265,9 @@ export default function AudioTranscriptionPage() {
     setIsLoading(true)
     setError(null)
     setResult(null)
+    setMeetingNotes(null)
+    setWorkspaceTab("transcribe")
+    setActiveResultTab("txt")
     setTaskProgress(0)
 
     try {
@@ -277,10 +301,12 @@ export default function AudioTranscriptionPage() {
         })
       } else {
         // 兼容舊版本直接返回結果的情況
-        setResult(data)
-        setIsLoading(false)
-        toast("轉錄完成", {
-          description: "音檔已成功轉錄。",
+      setResult(data)
+      setMeetingNotes(null)
+      setWorkspaceTab("transcribe")
+      setIsLoading(false)
+      toast("轉錄完成", {
+        description: "音檔已成功轉錄。",
         })
       }
     } catch (err) {
@@ -318,6 +344,9 @@ export default function AudioTranscriptionPage() {
     setLanguage("auto")
     setDenoise(false)
     setResult(null)
+    setMeetingNotes(null)
+    setWorkspaceTab("transcribe")
+    setActiveResultTab("txt")
     setError(null)
     setCurrentTaskId(null)
     setTaskProgress(0)
@@ -429,17 +458,24 @@ export default function AudioTranscriptionPage() {
       }
 
       const data = await response.json() as { txt?: string | null; srt?: string | null }
+      let nextTxt: string | undefined
 
       setResult((prev) => {
         if (!prev) return prev
         const updated: TranscriptionResult = { ...prev }
         if (typeof data.txt === "string") {
           updated.txt = data.txt
+          nextTxt = data.txt
         }
         if (typeof data.srt === "string") {
           updated.srt = data.srt
         }
         return updated
+      })
+
+      setMeetingNotes((prev) => {
+        if (!prev) return prev
+        return buildMeetingNotes(nextTxt ?? result?.txt ?? "")
       })
 
       toast("已轉為繁體", {
@@ -452,6 +488,112 @@ export default function AudioTranscriptionPage() {
       })
     } finally {
       setIsConvertingTraditional(false)
+    }
+  }
+
+  const generateMeetingNotes = async () => {
+    if (!result?.txt?.trim()) {
+      toast.error("沒有可整理的逐字稿", {
+        description: "請先完成轉錄，取得 TXT 結果後再整理會議記錄。",
+      })
+      return
+    }
+
+    try {
+      setIsPreparingMeetingNotes(true)
+      await Promise.resolve()
+      setMeetingNotes(buildMeetingNotes(result.txt))
+      setWorkspaceTab("meeting-notes")
+      toast("已建立整理稿", {
+        description: "已切換到會議記錄頁，你可以直接編修摘要、決議與待辦。",
+      })
+    } finally {
+      setIsPreparingMeetingNotes(false)
+    }
+  }
+
+  const updateMeetingNotesSummary = (value: string) => {
+    setMeetingNotes((prev) => (prev ? { ...prev, summary: value } : prev))
+  }
+
+  const updateMeetingNotesList = (key: keyof Omit<MeetingNotesDraft, "summary">, value: string) => {
+    setMeetingNotes((prev) =>
+      prev
+        ? {
+            ...prev,
+            [key]: value
+              .split("\n")
+              .map((item) => item.trim())
+              .filter(Boolean),
+          }
+        : prev,
+    )
+  }
+
+  const downloadMeetingNotes = () => {
+    if (!meetingNotes) {
+      toast.error("尚未建立整理稿", {
+        description: "請先產生會議記錄，再下載整理稿。",
+      })
+      return
+    }
+
+    try {
+      const text = formatMeetingNotesForExport(meetingNotes)
+      const blob = new Blob([text], { type: "text/markdown;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = buildMeetingNotesFilename({
+        sourceName: file?.name,
+        extension: "md",
+      })
+      a.style.display = "none"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast("下載開始", {
+        description: "會議記錄整理稿已開始下載。",
+      })
+    } catch (error) {
+      console.error("Meeting notes download failed:", error)
+      toast.error("下載失敗", {
+        description: "無法下載整理稿，請稍後再試。",
+      })
+    }
+  }
+
+  const downloadMeetingNotesDocx = async () => {
+    if (!meetingNotes) {
+      toast.error("尚未建立整理稿", {
+        description: "請先產生會議記錄，再下載 DOCX。",
+      })
+      return
+    }
+
+    try {
+      const blob = await buildMeetingNotesDocxBlob(meetingNotes)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = buildMeetingNotesFilename({
+        sourceName: file?.name,
+        extension: "docx",
+      })
+      a.style.display = "none"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast("下載開始", {
+        description: "DOCX 會議記錄已開始下載。",
+      })
+    } catch (error) {
+      console.error("Meeting notes DOCX download failed:", error)
+      toast.error("DOCX 下載失敗", {
+        description: "無法建立 DOCX，請稍後再試。",
+      })
     }
   }
 
@@ -477,13 +619,18 @@ export default function AudioTranscriptionPage() {
         <p className="text-muted-foreground">上傳音檔文件獲取準確的轉錄結果，支持實時進度監控</p>
       </div>
 
-      <Tabs defaultValue="transcribe" className="w-full">
+      <Tabs value={workspaceTab} onValueChange={(value) => setWorkspaceTab(value as "transcribe" | "meeting-notes")} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="transcribe">轉錄文件</TabsTrigger>
-          <TabsTrigger value="tasks">任務管理</TabsTrigger>
+          <TabsTrigger value="meeting-notes" disabled={meetingNotesViewState.disabled} className="gap-2">
+            會議記錄
+            <span className="rounded-full bg-stone-900/90 px-2 py-0.5 text-[10px] font-semibold tracking-[0.18em] text-stone-50">
+              {meetingNotesViewState.badge}
+            </span>
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="transcribe" className="space-y-6">
+        <TabsContent value="transcribe" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Upload Section */}
             <Card>
@@ -698,53 +845,57 @@ export default function AudioTranscriptionPage() {
                         )}
 
                         {/* Format Tabs */}
-                        <div className="flex space-x-1 bg-muted p-1 rounded-lg">
-                          <button
-                            onClick={() => setActiveTab('txt')}
-                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'txt'
-                                ? 'bg-background text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground'
-                              }`}
-                          >
-                            <FileText className="w-4 h-4" />
-                            純文本
-                          </button>
-                          <button
-                            onClick={() => setActiveTab('srt')}
-                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'srt'
-                                ? 'bg-background text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground'
-                              }`}
-                          >
-                            <Subtitles className="w-4 h-4" />
-                            SRT字幕
-                          </button>
-                        </div>
+                        <Tabs
+                          value={activeResultTab}
+                          onValueChange={(value) => setActiveResultTab(value as "txt" | "srt")}
+                          className="space-y-3"
+                        >
+                          <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="txt" className="gap-2">
+                              <FileText className="w-4 h-4" />
+                              純文本
+                            </TabsTrigger>
+                            <TabsTrigger value="srt" className="gap-2">
+                              <Subtitles className="w-4 h-4" />
+                              SRT字幕
+                            </TabsTrigger>
+                          </TabsList>
 
-                        {/* Content Display */}
-                        <div className="p-4 bg-muted rounded-lg">
-                          <Label className="text-sm font-medium mb-2 block">
-                            {activeTab === 'txt' ? '轉錄文本：' : 'SRT字幕：'}
-                          </Label>
-                          <Textarea
-                            value={activeTab === 'txt' ? result.txt || '' : result.srt || ''}
-                            onChange={(e) => {
-                              if (activeTab === 'txt') {
-                                setResult(prev => prev ? { ...prev, txt: e.target.value } : null)
-                              } else {
-                                setResult(prev => prev ? { ...prev, srt: e.target.value } : null)
-                              }
-                            }}
-                            className="min-h-[300px] resize-none font-mono text-sm"
-                            placeholder={activeTab === 'txt' ? '轉錄文本將在這裡顯示...' : 'SRT字幕將在這裡顯示...'}
-                          />
-                        </div>
+                          <TabsContent value="txt" forceMount className="data-[state=inactive]:hidden">
+                            <div className="p-4 bg-muted rounded-lg">
+                              <Label className="text-sm font-medium mb-2 block">轉錄文本：</Label>
+                              <Textarea
+                                value={result.txt || ""}
+                                onChange={(e) => {
+                                  setResult((prev) => (prev ? { ...prev, txt: e.target.value } : null))
+                                  setMeetingNotes((prev) => (prev ? buildMeetingNotes(e.target.value) : prev))
+                                }}
+                                className="min-h-[300px] resize-none font-mono text-sm"
+                                placeholder="轉錄文本將在這裡顯示..."
+                              />
+                            </div>
+                          </TabsContent>
+
+                          <TabsContent value="srt" forceMount className="data-[state=inactive]:hidden">
+                            <div className="p-4 bg-muted rounded-lg">
+                              <Label className="text-sm font-medium mb-2 block">SRT字幕：</Label>
+                              <Textarea
+                                value={result.srt || ""}
+                                onChange={(e) => {
+                                  setResult((prev) => (prev ? { ...prev, srt: e.target.value } : null))
+                                }}
+                                className="min-h-[300px] resize-none font-mono text-sm"
+                                placeholder="SRT字幕將在這裡顯示..."
+                              />
+                            </div>
+                          </TabsContent>
+                        </Tabs>
 
                         {/* Action Buttons */}
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button
                             onClick={() => {
-                              const text = activeTab === 'txt' ? result.txt || '' : result.srt || ''
+                              const text = activeResultTab === 'txt' ? result.txt || '' : result.srt || ''
                               copyToClipboard(text)
                             }}
                             className="flex-1"
@@ -765,19 +916,41 @@ export default function AudioTranscriptionPage() {
                         )}
                         簡轉繁
                       </Button>
-                      <Button
-                        onClick={() => {
-                          const text = activeTab === 'txt' ? result.txt || '' : result.srt || ''
-                          downloadFile(text, activeTab)
-                        }}
-                        variant="outline"
-                        className="flex-1"
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        下載文件
-                      </Button>
-                    </div>
-                  </div>
+                          <Button
+                            onClick={() => {
+                              const text = activeResultTab === 'txt' ? result.txt || '' : result.srt || ''
+                              downloadFile(text, activeResultTab)
+                            }}
+                            variant="outline"
+                            className="flex-1"
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            下載文件
+                          </Button>
+                          <Button
+                            onClick={generateMeetingNotes}
+                            variant="default"
+                            className="min-w-[220px] bg-amber-500 text-stone-950 hover:bg-amber-400"
+                            disabled={isPreparingMeetingNotes || !(result.txt || "").trim()}
+                          >
+                            {isPreparingMeetingNotes ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Sparkles className="w-4 h-4 mr-2" />
+                            )}
+                            產生會議記錄
+                          </Button>
+                          <Button
+                            onClick={() => setWorkspaceTab("meeting-notes")}
+                            variant="secondary"
+                            className="min-w-[180px]"
+                            disabled={meetingNotesViewState.disabled}
+                          >
+                            <FileText className="w-4 h-4 mr-2" />
+                            前往會議記錄
+                          </Button>
+                        </div>
+                      </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <FileAudio className="w-12 h-12 text-muted-foreground mb-4" />
@@ -787,9 +960,7 @@ export default function AudioTranscriptionPage() {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
 
-        <TabsContent value="tasks" className="space-y-6">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -798,7 +969,7 @@ export default function AudioTranscriptionPage() {
                     <Clock className="w-5 h-5" />
                     活躍任務
                   </CardTitle>
-                  <CardDescription>管理正在進行的轉錄任務</CardDescription>
+                  <CardDescription>轉錄流程中的背景任務會顯示在這裡，不再單獨占用主 tab。</CardDescription>
                 </div>
                 <Button onClick={fetchActiveTasks} variant="outline" size="sm">
                   <RefreshCw className="w-4 h-4 mr-2" />
@@ -856,6 +1027,167 @@ export default function AudioTranscriptionPage() {
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Clock className="w-12 h-12 text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">當前沒有活躍的轉錄任務</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="meeting-notes" forceMount className="space-y-6 data-[state=inactive]:hidden">
+          <Card className="overflow-hidden border-amber-200/70 bg-[linear-gradient(135deg,rgba(255,251,235,0.95),rgba(255,237,213,0.92))] shadow-[0_20px_60px_-35px_rgba(180,83,9,0.45)]">
+            <CardHeader className="border-b border-amber-200/70 bg-white/45">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-amber-700/80">
+                    Meeting Memo
+                  </p>
+                  <div>
+                    <CardTitle className="text-2xl font-semibold tracking-tight text-stone-900">
+                      會議記錄整理工作檯
+                    </CardTitle>
+                    <CardDescription className="mt-1 max-w-2xl text-sm leading-6 text-stone-700">
+                      先保留原始逐字稿，再把可行動資訊整理成摘要、重點、決議與待辦。這一頁只做整理，不混進任務管理。
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <div className="rounded-full border border-amber-300/80 bg-white/70 px-4 py-2 text-xs font-medium text-amber-800 shadow-sm">
+                    {meetingNotesViewState.badge}
+                  </div>
+                  <Button variant="outline" onClick={() => setWorkspaceTab("transcribe")}>
+                    回到轉錄文件
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-5 p-5">
+              {meetingNotes ? (
+                <>
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <div className="rounded-[22px] border border-amber-200/80 bg-white/75 px-4 py-3 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-700/70">Summary</p>
+                      <p className="mt-2 text-2xl font-semibold text-stone-900">{meetingNotes.summary.trim() ? "01" : "00"}</p>
+                      <p className="mt-1 text-xs text-stone-600">摘要區塊已啟用</p>
+                    </div>
+                    <div className="rounded-[22px] border border-sky-200/80 bg-white/75 px-4 py-3 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-700/70">Discussion</p>
+                      <p className="mt-2 text-2xl font-semibold text-stone-900">{meetingNotes.discussion_points.length}</p>
+                      <p className="mt-1 text-xs text-stone-600">重點討論條目</p>
+                    </div>
+                    <div className="rounded-[22px] border border-emerald-200/80 bg-white/75 px-4 py-3 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700/70">Decision</p>
+                      <p className="mt-2 text-2xl font-semibold text-stone-900">{meetingNotes.decisions.length}</p>
+                      <p className="mt-1 text-xs text-stone-600">已整理決議事項</p>
+                    </div>
+                    <div className="rounded-[22px] border border-rose-200/80 bg-white/75 px-4 py-3 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-700/70">Action</p>
+                      <p className="mt-2 text-2xl font-semibold text-stone-900">{meetingNotes.action_items.length}</p>
+                      <p className="mt-1 text-xs text-stone-600">待辦事項條目</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-stone-200/80 bg-white/70 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-stone-900">整理稿輸出</p>
+                      <p className="text-xs text-stone-600">可以直接複製到文件或下載成 Markdown。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => copyToClipboard(formatMeetingNotesForExport(meetingNotes))}>
+                        <Copy className="mr-2 h-4 w-4" />
+                        複製整理稿
+                      </Button>
+                      <Button onClick={downloadMeetingNotes} className="bg-stone-900 text-stone-50 hover:bg-stone-800">
+                        <Download className="mr-2 h-4 w-4" />
+                        下載 Markdown
+                      </Button>
+                      <Button onClick={downloadMeetingNotesDocx} className="bg-stone-900 text-stone-50 hover:bg-stone-800">
+                        <Download className="mr-2 h-4 w-4" />
+                        下載 DOCX
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-[1.15fr,0.85fr]">
+                    <div className="rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-sm">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-stone-700">
+                        <FileText className="h-4 w-4 text-amber-600" />
+                        摘要
+                      </div>
+                      <Textarea
+                        value={meetingNotes.summary}
+                        onChange={(event) => updateMeetingNotesSummary(event.target.value)}
+                        className="min-h-[180px] resize-none border-amber-100 bg-white/90 text-sm leading-7 text-stone-800"
+                        placeholder="整理後的摘要會顯示在這裡"
+                      />
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-[24px] border border-sky-200/70 bg-sky-50/90 p-4 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-sky-900">
+                          <Sparkles className="h-4 w-4" />
+                          重點討論
+                        </div>
+                        <Textarea
+                          value={meetingNotes.discussion_points.join("\n")}
+                          onChange={(event) => updateMeetingNotesList("discussion_points", event.target.value)}
+                          className="min-h-[220px] resize-none border-sky-100 bg-white/80 text-sm leading-6 text-slate-800"
+                        />
+                      </div>
+
+                      <div className="rounded-[24px] border border-emerald-200/70 bg-emerald-50/90 p-4 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-emerald-900">
+                          <CheckCircle className="h-4 w-4" />
+                          決議事項
+                        </div>
+                        <Textarea
+                          value={meetingNotes.decisions.join("\n")}
+                          onChange={(event) => updateMeetingNotesList("decisions", event.target.value)}
+                          className="min-h-[220px] resize-none border-emerald-100 bg-white/80 text-sm leading-6 text-slate-800"
+                        />
+                      </div>
+
+                      <div className="rounded-[24px] border border-rose-200/70 bg-rose-50/90 p-4 shadow-sm sm:col-span-2">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-rose-900">
+                          <Clock className="h-4 w-4" />
+                          待辦事項
+                        </div>
+                        <Textarea
+                          value={meetingNotes.action_items.join("\n")}
+                          onChange={(event) => updateMeetingNotesList("action_items", event.target.value)}
+                          className="min-h-[160px] resize-none border-rose-100 bg-white/85 text-sm leading-6 text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[24px] border border-stone-200/80 bg-white/70 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-stone-900">原始逐字稿參考</p>
+                        <p className="text-xs text-stone-600">整理會議記錄時，可以隨時對照 TXT 內容。</p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => setWorkspaceTab("transcribe")}>
+                        查看 TXT / SRT
+                      </Button>
+                    </div>
+                    <Textarea
+                      value={result?.txt || ""}
+                      readOnly
+                      className="min-h-[220px] resize-none border-stone-200 bg-white/90 font-mono text-sm leading-6 text-stone-700"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-[24px] border border-dashed border-amber-300/80 bg-white/60 px-6 py-10 text-center">
+                  <Sparkles className="mx-auto mb-3 h-8 w-8 text-amber-500" />
+                  <p className="text-base font-medium text-stone-800">先完成轉錄，再產生會議記錄整理稿。</p>
+                  <p className="mt-2 text-sm text-stone-600">
+                    逐字稿準備好後，回到「轉錄文件」點擊「產生會議記錄」，這裡就會出現可直接編修的整理稿。
+                  </p>
+                  <Button className="mt-5" onClick={() => setWorkspaceTab("transcribe")} variant="outline">
+                    回到轉錄文件
+                  </Button>
                 </div>
               )}
             </CardContent>

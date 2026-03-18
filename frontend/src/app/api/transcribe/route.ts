@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { ApiClient } from "@/lib/api-client"
+import { isDevMockEnabled, startMockTask } from "@/lib/dev-transcribe-mock"
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData()
@@ -12,6 +13,20 @@ export async function POST(request: NextRequest) {
       { detail: [{ loc: ["body", "file"], msg: "File is required", type: "missing" }] },
       { status: 422 },
     )
+  }
+
+  if (isDevMockEnabled()) {
+    const task = startMockTask({
+      filename: file.name,
+      language: language && language.trim() !== "" ? language : "auto",
+      denoise: denoise === "true",
+    })
+
+    return NextResponse.json({
+      task_id: task.task_id,
+      status: "started",
+      message: "轉錄任務已啟動",
+    })
   }
 
   // Create FormData for the external API
