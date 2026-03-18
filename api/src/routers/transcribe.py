@@ -7,11 +7,18 @@ import os
 import logging
 import uuid
 import threading
+import requests
 from threading import Semaphore
 import time
 from datetime import datetime, timezone
 from ..workers.transcribe_worker import transcribe_worker
 from ..utils.text_conversion import convert_to_traditional_chinese
+from ..models.meeting_notes import MeetingNotesRequest, MeetingNotesResponse
+from ..services.meeting_notes import (
+    ProviderConfigurationError,
+    ProviderResponseError,
+    generate_meeting_notes,
+)
 
 # 设置日志配置
 logger = logging.getLogger(__name__)
@@ -431,3 +438,25 @@ async def list_active_tasks():
             "created_at": task_info.get("created_at")
         })
     return {"active_tasks": tasks} 
+
+
+@router.post(
+    "/meeting-notes",
+    response_model=MeetingNotesResponse,
+    responses={
+        200: {"description": "成功生成會議記錄"},
+        422: {"description": "逐字稿內容缺失或為空"},
+        502: {"description": "會議記錄 provider 回應格式錯誤或請求失敗"},
+        503: {"description": "會議記錄 provider 尚未設定"},
+    },
+)
+async def create_meeting_notes(payload: MeetingNotesRequest):
+    try:
+        result = generate_meeting_notes(payload.transcript, payload.source_name)
+        return MeetingNotesResponse(**result)
+    except ProviderConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ProviderResponseError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except requests.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Meeting notes provider request failed") from exc

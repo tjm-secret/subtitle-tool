@@ -104,6 +104,7 @@ export default function AudioTranscriptionPage() {
   const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([])
   const [meetingNotes, setMeetingNotes] = useState<MeetingNotesDraft | null>(null)
   const [isPreparingMeetingNotes, setIsPreparingMeetingNotes] = useState(false)
+  const [meetingNotesError, setMeetingNotesError] = useState<string | null>(null)
   const meetingNotesViewState = getMeetingNotesViewState({
     transcript: result?.txt ?? "",
     meetingNotes,
@@ -266,6 +267,7 @@ export default function AudioTranscriptionPage() {
     setError(null)
     setResult(null)
     setMeetingNotes(null)
+    setMeetingNotesError(null)
     setWorkspaceTab("transcribe")
     setActiveResultTab("txt")
     setTaskProgress(0)
@@ -477,6 +479,7 @@ export default function AudioTranscriptionPage() {
         if (!prev) return prev
         return buildMeetingNotes(nextTxt ?? result?.txt ?? "")
       })
+      setMeetingNotesError(null)
 
       toast("已轉為繁體", {
         description: "轉錄內容已轉換為繁體中文。",
@@ -501,11 +504,50 @@ export default function AudioTranscriptionPage() {
 
     try {
       setIsPreparingMeetingNotes(true)
-      await Promise.resolve()
-      setMeetingNotes(buildMeetingNotes(result.txt))
+      setMeetingNotesError(null)
+      const response = await fetch("/api/transcribe/meeting-notes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transcript: result.txt,
+          source_name: file?.name ?? null,
+        }),
+      })
+
+      const payload = await response.json().catch(() => ({})) as {
+        summary?: string
+        discussion_points?: string[]
+        decisions?: string[]
+        action_items?: string[]
+        detail?: unknown
+      }
+
+      if (!response.ok) {
+        const detail = payload?.detail
+        const message =
+          typeof detail === "string"
+            ? detail
+            : "會議記錄生成失敗，請檢查後端 provider 設定或稍後再試。"
+        throw new Error(message)
+      }
+
+      setMeetingNotes({
+        summary: payload.summary ?? "",
+        discussion_points: payload.discussion_points ?? [],
+        decisions: payload.decisions ?? [],
+        action_items: payload.action_items ?? [],
+      })
       setWorkspaceTab("meeting-notes")
       toast("已建立整理稿", {
         description: "已切換到會議記錄頁，你可以直接編修摘要、決議與待辦。",
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "會議記錄生成失敗"
+      setMeetingNotesError(message)
+      toast.error("會議記錄生成失敗", {
+        description: message,
       })
     } finally {
       setIsPreparingMeetingNotes(false)
@@ -868,7 +910,6 @@ export default function AudioTranscriptionPage() {
                                 value={result.txt || ""}
                                 onChange={(e) => {
                                   setResult((prev) => (prev ? { ...prev, txt: e.target.value } : null))
-                                  setMeetingNotes((prev) => (prev ? buildMeetingNotes(e.target.value) : prev))
                                 }}
                                 className="min-h-[300px] resize-none font-mono text-sm"
                                 placeholder="轉錄文本將在這裡顯示..."
@@ -950,6 +991,12 @@ export default function AudioTranscriptionPage() {
                             前往會議記錄
                           </Button>
                         </div>
+                        {meetingNotesError ? (
+                          <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription>{meetingNotesError}</AlertDescription>
+                          </Alert>
+                        ) : null}
                       </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-center">

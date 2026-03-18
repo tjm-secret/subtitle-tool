@@ -6,11 +6,27 @@ import uuid
 from unittest.mock import Mock, MagicMock
 from fastapi.testclient import TestClient
 from io import BytesIO
+import types
 
 # 导入被测试的模块
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+os.environ.setdefault("MEETING_NOTES_DEV_FALLBACK", "true")
+
+torch_stub = types.ModuleType("torch")
+torch_stub.cuda = types.SimpleNamespace(is_available=lambda: False)
+sys.modules.setdefault("torch", torch_stub)
+
+faster_whisper_stub = types.ModuleType("faster_whisper")
+
+class DummyWhisperModel:
+    def __init__(self, *args, **kwargs):
+        pass
+
+faster_whisper_stub.WhisperModel = DummyWhisperModel
+sys.modules.setdefault("faster_whisper", faster_whisper_stub)
 
 from src.whisper_api import app
 from src.routers.transcribe import TranscriptionTask

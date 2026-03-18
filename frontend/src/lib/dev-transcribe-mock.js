@@ -55,6 +55,14 @@ function computeStatus(task) {
 }
 
 export function isDevMockEnabled() {
+  if (process.env.DEV_TRANSCRIBE_MOCK === "true") {
+    return true
+  }
+
+  if (process.env.DEV_TRANSCRIBE_MOCK === "false") {
+    return false
+  }
+
   return process.env.NODE_ENV === "development"
 }
 

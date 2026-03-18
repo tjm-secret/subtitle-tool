@@ -219,4 +219,52 @@ class TestTranscribeEndpoints:
         tasks = {task["task_id"]: task for task in data["active_tasks"]}
         assert tasks[task_id1]["status"] == "running"
         assert tasks[task_id1]["progress"] == 30
-        assert tasks[task_id2]["progress"] == 70 
+        assert tasks[task_id2]["progress"] == 70
+
+    @patch("src.routers.transcribe.generate_meeting_notes")
+    def test_generate_meeting_notes_success(self, mock_generate_meeting_notes, client):
+        mock_generate_meeting_notes.return_value = {
+            "summary": "整理後摘要",
+            "discussion_points": ["重點討論"],
+            "decisions": ["決議事項"],
+            "action_items": ["待辦事項"],
+        }
+
+        response = client.post(
+            "/transcribe/meeting-notes",
+            json={
+                "transcript": "這是一段逐字稿",
+                "source_name": "team-sync.mp3",
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["summary"] == "整理後摘要"
+        assert data["discussion_points"] == ["重點討論"]
+        assert data["decisions"] == ["決議事項"]
+        assert data["action_items"] == ["待辦事項"]
+
+    def test_generate_meeting_notes_requires_transcript(self, client):
+        response = client.post(
+            "/transcribe/meeting-notes",
+            json={"transcript": "   ", "source_name": "team-sync.mp3"},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @patch("src.routers.transcribe.generate_meeting_notes")
+    def test_generate_meeting_notes_returns_503_when_provider_not_configured(
+        self, mock_generate_meeting_notes, client
+    ):
+        from src.services.meeting_notes import ProviderConfigurationError
+
+        mock_generate_meeting_notes.side_effect = ProviderConfigurationError("provider missing")
+
+        response = client.post(
+            "/transcribe/meeting-notes",
+            json={"transcript": "這是一段逐字稿", "source_name": "team-sync.mp3"},
+        )
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "provider missing" in response.json()["detail"]

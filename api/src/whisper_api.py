@@ -8,9 +8,11 @@ except RuntimeError:
 import torch
 import logging
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 
 from .routers.convert import router as convert_router
 from .routers.transcribe import router as transcribe_router
+from .services.meeting_notes import validate_meeting_notes_provider_startup
 from .utils.text_conversion import convert_to_traditional_chinese
 from .workers.transcribe_worker import add_chinese_punctuation, format_timestamp
 
@@ -24,7 +26,14 @@ compute_type = "float16" if device == "cuda" else "int8"
 logger.info(f"使用设备: {device}, 计算类型: {compute_type}")
 logger.info("API server started on port http://localhost:8010")
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    validate_meeting_notes_provider_startup()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 # 挂载路由
 app.include_router(transcribe_router)
