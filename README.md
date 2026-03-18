@@ -54,6 +54,9 @@ cp api/env.template api/.env
 # - MAX_CONCURRENT_CONVERT_TASKS: 轉換任務並發數（默認 2）
 # - WHISPER_MODEL_SIZE: Whisper 模型大小（默認 base）
 # - WHISPER_DEVICE: 運行設備（cpu/cuda/mps）
+# - MEETING_NOTES_API_BASE_URL: 會議記錄 LLM 的 OpenAI-compatible base URL
+# - MEETING_NOTES_MODEL: 會議記錄使用的模型名稱
+# - MEETING_NOTES_API_KEY: 若供應商需要驗證則填入，local vLLM 可留空
 ```
 
 3. 構建項目：
@@ -164,6 +167,18 @@ WHISPER_MODEL_SIZE=base
 
 # 運行設備：cpu, cuda (NVIDIA GPU), mps (Apple Silicon)
 WHISPER_DEVICE=cpu
+```
+
+#### 會議記錄 LLM 配置
+```bash
+# OpenAI-compatible base URL
+MEETING_NOTES_API_BASE_URL=http://localhost:8001/v1
+
+# 供應商對外提供的模型名稱
+MEETING_NOTES_MODEL=Qwen/Qwen2.5-7B-Instruct
+
+# 需要驗證時才設定；本地 vLLM 可留空
+MEETING_NOTES_API_KEY=
 ```
 
 #### 文件處理

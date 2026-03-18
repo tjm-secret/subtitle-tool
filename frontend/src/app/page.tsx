@@ -42,6 +42,13 @@ interface TranscriptionResult {
   [key: string]: unknown
 }
 
+interface MeetingNotesResult {
+  summary: string
+  highlights: string[]
+  decisions: string[]
+  action_items: string[]
+}
+
 interface TaskStatus {
   task_id: string
   status: "running" | "completed" | "error" | "cancelled"
@@ -79,9 +86,12 @@ export default function AudioTranscriptionPage() {
   const [result, setResult] = useState<TranscriptionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
-  const [activeTab, setActiveTab] = useState<'txt' | 'srt'>('txt')
+  const [activeTab, setActiveTab] = useState<'txt' | 'srt' | 'meeting-notes'>('txt')
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [isConvertingTraditional, setIsConvertingTraditional] = useState(false)
+  const [meetingNotes, setMeetingNotes] = useState<MeetingNotesResult | null>(null)
+  const [meetingNotesError, setMeetingNotesError] = useState<string | null>(null)
+  const [isGeneratingMeetingNotes, setIsGeneratingMeetingNotes] = useState(false)
   
   // 新增状态用于任务管理
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
@@ -137,6 +147,9 @@ export default function AudioTranscriptionPage() {
               if (resultResponse.ok) {
                 const resultData = await resultResponse.json()
                 setResult(resultData)
+                setMeetingNotes(null)
+                setMeetingNotesError(null)
+                setActiveTab('txt')
                 setIsLoading(false)
                 setCurrentTaskId(null)
                 fetchActiveTasks() // 刷新任務列表
@@ -321,6 +334,10 @@ export default function AudioTranscriptionPage() {
     setError(null)
     setCurrentTaskId(null)
     setTaskProgress(0)
+    setMeetingNotes(null)
+    setMeetingNotesError(null)
+    setIsGeneratingMeetingNotes(false)
+    setActiveTab('txt')
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl)
       setAudioUrl(null)
@@ -363,7 +380,7 @@ export default function AudioTranscriptionPage() {
     }
   }
 
-  const downloadFile = (text: string, format: 'txt' | 'srt') => {
+  const downloadFile = (text: string, format: 'txt' | 'srt' | 'md', filename?: string) => {
     if (!text) {
       toast.error("內容為空", {
         description: "沒有可下載的內容。",
@@ -376,7 +393,7 @@ export default function AudioTranscriptionPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `transcription.${format}`
+      a.download = filename ?? `transcription.${format}`
       a.style.display = 'none'
       document.body.appendChild(a)
       a.click()
@@ -390,6 +407,72 @@ export default function AudioTranscriptionPage() {
       toast.error("下載失敗", {
         description: "無法下載文件，請稍後再試。",
       })
+    }
+  }
+
+  const formatMeetingNotesForExport = (notes: MeetingNotesResult) => {
+    const sections = [
+      `# 摘要\n${notes.summary}`,
+      `# 重點討論\n${notes.highlights.length > 0 ? notes.highlights.map((item) => `- ${item}`).join("\n") : "- 無"}`,
+      `# 決議事項\n${notes.decisions.length > 0 ? notes.decisions.map((item) => `- ${item}`).join("\n") : "- 無"}`,
+      `# 待辦事項\n${notes.action_items.length > 0 ? notes.action_items.map((item) => `- ${item}`).join("\n") : "- 無"}`,
+    ]
+    return sections.join("\n\n")
+  }
+
+  const generateMeetingNotes = async () => {
+    const transcript = result?.txt?.trim()
+    if (!transcript) {
+      toast.error("沒有可用逐字稿", {
+        description: "請先完成轉錄，再生成會議記錄。",
+      })
+      return
+    }
+
+    try {
+      setIsGeneratingMeetingNotes(true)
+      setMeetingNotesError(null)
+
+      const response = await fetch("/api/meeting-notes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ transcript }),
+      })
+
+      const payload = await response.json().catch(() => ({})) as {
+        detail?: string
+        summary?: string
+        highlights?: string[]
+        decisions?: string[]
+        action_items?: string[]
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.detail || "會議記錄生成失敗")
+      }
+
+      const notes: MeetingNotesResult = {
+        summary: payload.summary || "",
+        highlights: Array.isArray(payload.highlights) ? payload.highlights : [],
+        decisions: Array.isArray(payload.decisions) ? payload.decisions : [],
+        action_items: Array.isArray(payload.action_items) ? payload.action_items : [],
+      }
+
+      setMeetingNotes(notes)
+      setActiveTab('meeting-notes')
+      toast("會議記錄已生成", {
+        description: "已根據逐字稿整理出固定格式的會議記錄。",
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "會議記錄生成失敗"
+      setMeetingNotesError(message)
+      toast.error("生成失敗", {
+        description: message,
+      })
+    } finally {
+      setIsGeneratingMeetingNotes(false)
     }
   }
 
@@ -719,64 +802,169 @@ export default function AudioTranscriptionPage() {
                             <Subtitles className="w-4 h-4" />
                             SRT字幕
                           </button>
+                          <button
+                            onClick={() => setActiveTab('meeting-notes')}
+                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === 'meeting-notes'
+                                ? 'bg-background text-foreground shadow-sm'
+                                : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            會議記錄
+                          </button>
                         </div>
 
                         {/* Content Display */}
-                        <div className="p-4 bg-muted rounded-lg">
-                          <Label className="text-sm font-medium mb-2 block">
-                            {activeTab === 'txt' ? '轉錄文本：' : 'SRT字幕：'}
-                          </Label>
-                          <Textarea
-                            value={activeTab === 'txt' ? result.txt || '' : result.srt || ''}
-                            onChange={(e) => {
-                              if (activeTab === 'txt') {
-                                setResult(prev => prev ? { ...prev, txt: e.target.value } : null)
-                              } else {
-                                setResult(prev => prev ? { ...prev, srt: e.target.value } : null)
-                              }
-                            }}
-                            className="min-h-[300px] resize-none font-mono text-sm"
-                            placeholder={activeTab === 'txt' ? '轉錄文本將在這裡顯示...' : 'SRT字幕將在這裡顯示...'}
-                          />
-                        </div>
+                        {activeTab === 'meeting-notes' ? (
+                          <div className="space-y-4 rounded-lg bg-muted p-4">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium">會議記錄</Label>
+                              <Badge variant={meetingNotes ? "default" : meetingNotesError ? "destructive" : "secondary"}>
+                                {isGeneratingMeetingNotes ? "生成中" : meetingNotes ? "已完成" : meetingNotesError ? "失敗" : "待生成"}
+                              </Badge>
+                            </div>
+
+                            {meetingNotesError && (
+                              <Alert variant="destructive">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertDescription>{meetingNotesError}</AlertDescription>
+                              </Alert>
+                            )}
+
+                            {meetingNotes ? (
+                              <div className="space-y-4">
+                                <div className="rounded-lg bg-background p-4">
+                                  <p className="mb-2 text-sm font-medium">摘要</p>
+                                  <p className="text-sm leading-6 text-muted-foreground">{meetingNotes.summary}</p>
+                                </div>
+
+                                <div className="rounded-lg bg-background p-4">
+                                  <p className="mb-2 text-sm font-medium">重點討論</p>
+                                  <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                                    {(meetingNotes.highlights.length > 0 ? meetingNotes.highlights : ["無"]).map((item) => (
+                                      <li key={`highlight-${item}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+
+                                <div className="rounded-lg bg-background p-4">
+                                  <p className="mb-2 text-sm font-medium">決議事項</p>
+                                  <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                                    {(meetingNotes.decisions.length > 0 ? meetingNotes.decisions : ["無"]).map((item) => (
+                                      <li key={`decision-${item}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+
+                                <div className="rounded-lg bg-background p-4">
+                                  <p className="mb-2 text-sm font-medium">待辦事項</p>
+                                  <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                                    {(meetingNotes.action_items.length > 0 ? meetingNotes.action_items : ["無"]).map((item) => (
+                                      <li key={`action-${item}`}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-dashed bg-background p-6 text-center text-sm text-muted-foreground">
+                                轉錄完成後，可在這裡生成固定格式的會議記錄。
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="p-4 bg-muted rounded-lg">
+                            <Label className="text-sm font-medium mb-2 block">
+                              {activeTab === 'txt' ? '轉錄文本：' : 'SRT字幕：'}
+                            </Label>
+                            <Textarea
+                              value={activeTab === 'txt' ? result.txt || '' : result.srt || ''}
+                              onChange={(e) => {
+                                if (activeTab === 'txt') {
+                                  setResult(prev => prev ? { ...prev, txt: e.target.value } : null)
+                                } else {
+                                  setResult(prev => prev ? { ...prev, srt: e.target.value } : null)
+                                }
+                              }}
+                              className="min-h-[300px] resize-none font-mono text-sm"
+                              placeholder={activeTab === 'txt' ? '轉錄文本將在這裡顯示...' : 'SRT字幕將在這裡顯示...'}
+                            />
+                          </div>
+                        )}
 
                         {/* Action Buttons */}
                         <div className="flex gap-2">
-                          <Button
-                            onClick={() => {
-                              const text = activeTab === 'txt' ? result.txt || '' : result.srt || ''
-                              copyToClipboard(text)
-                            }}
-                            className="flex-1"
-                          >
-                            <Copy className="w-4 h-4 mr-2" />
-                            複製到剪貼板
-                          </Button>
-                          <Button
-                            onClick={convertResultToTraditional}
-                            variant="secondary"
-                            className="flex-1"
-                            disabled={isConvertingTraditional}
-                          >
-                        {isConvertingTraditional ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Sparkles className="w-4 h-4 mr-2" />
-                        )}
-                        簡轉繁
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          const text = activeTab === 'txt' ? result.txt || '' : result.srt || ''
-                          downloadFile(text, activeTab)
-                        }}
-                        variant="outline"
-                        className="flex-1"
-                      >
-                        <Download className="w-4 h-4 mr-2" />
-                        下載文件
-                      </Button>
-                    </div>
+                          {activeTab === 'meeting-notes' ? (
+                            <>
+                              <Button
+                                onClick={generateMeetingNotes}
+                                className="flex-1"
+                                disabled={isGeneratingMeetingNotes}
+                              >
+                                {isGeneratingMeetingNotes ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Sparkles className="w-4 h-4 mr-2" />
+                                )}
+                                {meetingNotes ? "重新生成" : "生成會議記錄"}
+                              </Button>
+                              <Button
+                                onClick={() => meetingNotes && copyToClipboard(formatMeetingNotesForExport(meetingNotes))}
+                                className="flex-1"
+                                variant="secondary"
+                                disabled={!meetingNotes}
+                              >
+                                <Copy className="w-4 h-4 mr-2" />
+                                複製會議記錄
+                              </Button>
+                              <Button
+                                onClick={() => meetingNotes && downloadFile(formatMeetingNotesForExport(meetingNotes), 'md', 'meeting-notes.md')}
+                                variant="outline"
+                                className="flex-1"
+                                disabled={!meetingNotes}
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                下載會議記錄
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                onClick={() => {
+                                  const text = activeTab === 'txt' ? result.txt || '' : result.srt || ''
+                                  copyToClipboard(text)
+                                }}
+                                className="flex-1"
+                              >
+                                <Copy className="w-4 h-4 mr-2" />
+                                複製到剪貼板
+                              </Button>
+                              <Button
+                                onClick={convertResultToTraditional}
+                                variant="secondary"
+                                className="flex-1"
+                                disabled={isConvertingTraditional}
+                              >
+                                {isConvertingTraditional ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Sparkles className="w-4 h-4 mr-2" />
+                                )}
+                                簡轉繁
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  const text = activeTab === 'txt' ? result.txt || '' : result.srt || ''
+                                  downloadFile(text, activeTab)
+                                }}
+                                variant="outline"
+                                className="flex-1"
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                下載文件
+                              </Button>
+                            </>
+                          )}
+                        </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-center">

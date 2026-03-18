@@ -5,6 +5,8 @@ import pytest
 from unittest.mock import patch, Mock
 from fastapi import status
 
+from src.services.meeting_notes_service import MeetingNotesGenerationError, MeetingNotesResult
+
 
 class TestHealthEndpoint:
     """健康检查端点测试"""
@@ -17,6 +19,44 @@ class TestHealthEndpoint:
         data = response.json()
         assert data["status"] == "healthy"
         assert "API 服務運行正常" in data["message"]
+
+
+class TestMeetingNotesEndpoint:
+    """會議記錄端點測試"""
+
+    @patch("src.routers.meeting_notes.get_meeting_notes_service")
+    def test_generate_meeting_notes_success(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.generate.return_value = MeetingNotesResult(
+            summary="本次會議聚焦時程與分工",
+            highlights=["確認上線窗口"],
+            decisions=["下週五發布"],
+            action_items=["Alex 更新 changelog"],
+        )
+        mock_get_service.return_value = mock_service
+
+        response = client.post("/meeting-notes/", json={"transcript": "逐字稿內容"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["summary"] == "本次會議聚焦時程與分工"
+        assert response.json()["decisions"] == ["下週五發布"]
+
+    def test_generate_meeting_notes_empty_transcript(self, client):
+        response = client.post("/meeting-notes/", json={"transcript": "   "})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.json()["detail"] == "Transcript is required"
+
+    @patch("src.routers.meeting_notes.get_meeting_notes_service")
+    def test_generate_meeting_notes_provider_error(self, mock_get_service, client):
+        mock_service = Mock()
+        mock_service.generate.side_effect = MeetingNotesGenerationError("provider failed")
+        mock_get_service.return_value = mock_service
+
+        response = client.post("/meeting-notes/", json={"transcript": "逐字稿內容"})
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json()["detail"] == "provider failed"
 
 
 class TestTranscribeEndpoints:

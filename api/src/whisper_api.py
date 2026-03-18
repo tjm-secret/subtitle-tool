@@ -10,6 +10,7 @@ import logging
 from fastapi import FastAPI
 
 from .routers.convert import router as convert_router
+from .routers.meeting_notes import router as meeting_notes_router
 from .routers.transcribe import router as transcribe_router
 from .utils.text_conversion import convert_to_traditional_chinese
 from .workers.transcribe_worker import add_chinese_punctuation, format_timestamp
@@ -29,6 +30,7 @@ app = FastAPI()
 # 挂载路由
 app.include_router(transcribe_router)
 app.include_router(convert_router)
+app.include_router(meeting_notes_router)
 
 @app.get("/health")
 async def health_check():
