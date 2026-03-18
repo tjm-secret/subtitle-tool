@@ -4,7 +4,7 @@
 * 🎧 api/：使用 FastAPI 與 Faster Whisper 的音訊轉錄後端
 * 🖥️ frontend/：使用 Next.js 15 與 React 19 實作的字幕上傳與顯示介面
 
-本專案使用 pnpm workspace 管理各子模組，方便統一依賴與指令管理。
+本專案使用 npm workspace 管理前端子模組，並由 root scripts 統一管理前後端常用指令。
 
 ## 📁 專案結構
 ```
@@ -26,8 +26,7 @@ subtitles-tool/
 │   ├── package.json
 │   └── tsconfig.json
 │
-├── package.json                  # root package，使用 pnpm workspace 管理
-├── pnpm-lock.yaml
+├── package.json                  # root package，使用 npm workspace 管理
 ├── CLAUDE.md                     # Claude Code 專案指引
 ├── README.md
 └── LICENSE
@@ -39,20 +38,33 @@ subtitles-tool/
 
 1. 安裝依賴：
 ```bash
-# 使用 pnpm 安裝所有依賴（包括前端和 concurrently）
-pnpm install
+# 使用 npm 安裝所有依賴（包括前端和 concurrently）
+npm install
 ```
 
-2. 構建項目：
+2. 配置環境變量（可選）：
+```bash
+# 複製 API 環境變量模板
+cp api/env.template api/.env
+
+# 編輯 api/.env 文件，調整配置參數
+# 主要配置項目：
+# - MAX_CONCURRENT_TASKS: 轉錄任務並發數（默認 3）
+# - MAX_CONCURRENT_CONVERT_TASKS: 轉換任務並發數（默認 2）
+# - WHISPER_MODEL_SIZE: Whisper 模型大小（默認 base）
+# - WHISPER_DEVICE: 運行設備（cpu/cuda/mps）
+```
+
+3. 構建項目：
 ```bash
 # 構建前端和安裝 API 的 Python 依賴
-pnpm run build:all
+npm run build:all
 ```
 
-3. 啟動開發環境：
+4. 啟動開發環境：
 ```bash
 # 同時啟動前端和 API 服務（開發模式）
-pnpm run dev:all
+npm run dev:all
 ```
 
 這將同時啟動：
@@ -63,10 +75,10 @@ pnpm run dev:all
 
 ```bash
 # 啟動生產模式（包含音訊清理服務）
-pnpm run start:all
+npm run start:all
 ```
 
-## 📦 pnpm workspace 設定
+## 📦 npm workspace 設定
 
 package.json（root）內容範例如下：
 ```json
@@ -74,19 +86,18 @@ package.json（root）內容範例如下：
   "name": "subtitles-tool",
   "private": true,
   "workspaces": [
-    "frontend",
-    "api"
+    "frontend"
   ],
   "scripts": {
-    "dev:fe": "pnpm --filter frontend run dev --port 8002",
+    "dev:fe": "npm run dev --workspace frontend -- --port 8002",
     "dev:api": "uvicorn api.src.whisper_api:app --host 0.0.0.0 --port 8010 --reload",
-    "dev:all": "concurrently \"pnpm run dev:fe\" \"pnpm run dev:api\"",
-    "build:fe": "pnpm install && pnpm --filter frontend run build",
+    "dev:all": "concurrently \"npm run dev:fe\" \"npm run dev:api\"",
+    "build:fe": "npm install && npm run build --workspace frontend",
     "build:api": "cd api && pip install -r requirements.txt",
-    "build:all": "pnpm run build:fe && pnpm run build:api",
-    "start:fe": "pnpm --filter frontend run start --port 8002",
+    "build:all": "npm run build:fe && npm run build:api",
+    "start:fe": "npm run start --workspace frontend -- --port 8002",
     "start:api": "uvicorn api.src.whisper_api:app --port 8010 --workers 1",
-    "start:all": "concurrently -k \"pnpm run start:fe\" \"pnpm run start:api\" \"pnpm run cleanup:audio\"",
+    "start:all": "concurrently -k \"npm run start:fe\" \"npm run start:api\" \"npm run cleanup:audio\"",
     "cleanup:audio": "python -m api.src.cleanup_service"
   },
   "devDependencies": {
@@ -97,13 +108,13 @@ package.json（root）內容範例如下：
 
 你可以透過 root 執行 workspace 指令，例如：
 ```bash
-pnpm run dev:fe          # 只啟動前端開發伺服器
-pnpm run dev:api         # 只啟動 API 開發伺服器
-pnpm run dev:all         # 同時啟動前後端開發伺服器
-pnpm run build:fe        # 只構建前端
-pnpm run build:api       # 只安裝 API 依賴
-pnpm run build:all       # 構建所有項目
-pnpm --filter frontend add some-package  # 為前端安裝特定包
+npm run dev:fe                          # 只啟動前端開發伺服器
+npm run dev:api                         # 只啟動 API 開發伺服器
+npm run dev:all                         # 同時啟動前後端開發伺服器
+npm run build:fe                        # 只構建前端
+npm run build:api                       # 只安裝 API 依賴
+npm run build:all                       # 構建所有項目
+npm install some-package -w frontend    # 為前端安裝特定包
 ```
 
 ## 🔧 使用說明
@@ -124,16 +135,73 @@ curl -X POST "http://localhost:8010/transcribe/" -F "file=@path/to/audio.mp3"
 ### 二、單獨運行前端（frontend/）
 
 ```bash
-pnpm install            # 從 root 安裝所有 workspace 相依
-pnpm run dev:fe         # 啟動前端（http://localhost:8002）
+npm install             # 從 root 安裝所有 workspace 相依
+npm run dev:fe          # 啟動前端（http://localhost:8002）
 ```
+
+## ⚙️ 環境變量配置
+
+項目提供了 API 環境變量模板文件：
+- `api/env.template`：API 配置模板
+
+### 主要配置項目
+
+#### 並發控制
+```bash
+# 轉錄任務並發數（默認：3）
+MAX_CONCURRENT_TASKS=3
+
+# 轉換任務並發數（默認：2）
+MAX_CONCURRENT_CONVERT_TASKS=2
+```
+
+#### Whisper 模型配置
+```bash
+# 模型大小：tiny, base, small, medium, large, large-v2, large-v3
+WHISPER_MODEL_SIZE=base
+
+# 運行設備：cpu, cuda (NVIDIA GPU), mps (Apple Silicon)
+WHISPER_DEVICE=cpu
+```
+
+#### 文件處理
+```bash
+# 最大文件大小（字節，默認 100MB）
+MAX_FILE_SIZE=104857600
+
+# 分片上傳大小（字節，默認 5MB）
+CHUNK_SIZE=5242880
+```
+
+#### 音頻處理
+```bash
+# 默認啟用降噪
+DEFAULT_DENOISE=false
+
+# 音頻質量：high (320kbps), medium (192kbps), low (128kbps)
+DEFAULT_AUDIO_QUALITY=medium
+
+# 默認音頻格式
+DEFAULT_AUDIO_FORMAT=mp3
+```
+
+### 使用方式
+
+1. 複製模板文件：
+```bash
+cp api/env.template api/.env
+```
+
+2. 編輯 `api/.env` 文件，取消註釋並設置需要的變量
+
+3. 重啟服務以應用新配置
 
 ## 🧪 測試
 
 ### 前端測試
 ```bash
 # Lint 前端程式碼
-pnpm --filter frontend run lint
+npm run lint --workspace frontend
 ```
 
 ### 後端測試

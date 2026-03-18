@@ -2,19 +2,18 @@
   "name": "subtitles-tool",
   "private": true,
   "workspaces": [
-    "frontend",
-    "api"
+    "frontend"
   ],
   "scripts": {
-    "build:fe": "pnpm install && pnpm --filter frontend run build",
+    "build:fe": "npm install && npm run build --workspace frontend",
     "build:api": "cd api && pip install -r requirements.txt",
-    "build:all": "pnpm run build:fe && pnpm run build:api",
-    "dev:fe": "pnpm --filter frontend run dev --port 8002",
+    "build:all": "npm run build:fe && npm run build:api",
+    "dev:fe": "npm run dev --workspace frontend -- --port 8002",
     "dev:api": "uvicorn api.src.whisper_api:app --host 0.0.0.0 --port 8010 --reload",
-    "dev:all": "concurrently \"pnpm run dev:fe\" \"pnpm run dev:api\"",
-    "start:fe": "pnpm --filter frontend run start --port 8002",
+    "dev:all": "concurrently \"npm run dev:fe\" \"npm run dev:api\"",
+    "start:fe": "npm run start --workspace frontend -- --port 8002",
     "start:api": "uvicorn api.src.whisper_api:app --port 8010 --workers 1",
-    "start:all": "concurrently -k \"pnpm run start:fe\" \"pnpm run start:api\" \"pnpm run cleanup:audio\"",
+    "start:all": "concurrently -k \"npm run start:fe\" \"npm run start:api\" \"npm run cleanup:audio\"",
     "cleanup:audio": "python -m api.src.cleanup_service"
   },
   "devDependencies": {

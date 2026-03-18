@@ -1,0 +1,8 @@
+{
+  "ui": {
+    "devServer": {
+      "mode": "command",
+      "command": "npm run dev:all"
+    }
+  }
+}
