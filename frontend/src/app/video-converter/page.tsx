@@ -66,7 +66,7 @@ export default function VideoConverterPage() {
           <TabsTrigger value="help">使用說明</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="converter" className="space-y-6">
+        <TabsContent value="converter" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <VideoToAudio onAudioGenerated={handleAudioGenerated} />
           
           {convertedAudio && (
@@ -94,7 +94,7 @@ export default function VideoConverterPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="features" className="space-y-6">
+        <TabsContent value="features" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <div className="grid gap-6 md:grid-cols-2">
             {features.map((feature, index) => (
               <Card key={index}>
@@ -153,7 +153,7 @@ export default function VideoConverterPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="help" className="space-y-6">
+        <TabsContent value="help" forceMount className="space-y-6 data-[state=inactive]:hidden">
           <Card>
             <CardHeader>
               <CardTitle>使用步驟</CardTitle>
