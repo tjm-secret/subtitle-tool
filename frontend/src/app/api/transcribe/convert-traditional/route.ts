@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { ApiClient } from "@/lib/api-client"
+import { convertTraditionalFallback, isDevMockEnabled } from "@/lib/dev-transcribe-mock"
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +12,10 @@ export async function POST(request: NextRequest) {
         { detail: "No text provided for conversion" },
         { status: 400 },
       )
+    }
+
+    if (isDevMockEnabled()) {
+      return NextResponse.json(convertTraditionalFallback(body))
     }
 
     return ApiClient.post("/transcribe/convert-traditional", body)
