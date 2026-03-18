@@ -3,13 +3,15 @@
 ## 0. 文件資訊
 - 對應 PRD：`docs/prd.md`
 - 對應 Epic：`docs/requirements/E-001-core-product-experience.md`
-- 對應需求：`E-001-001 核心主流程可用`、`E-001-003 第一版範圍邊界清楚`
+- 對應 Epic：`docs/requirements/E-002-development-workflow-consistency.md`
+- 對應需求：`E-001-001 核心主流程可用`、`E-001-003 第一版範圍邊界清楚`、`E-002-001 JavaScript 套件管理統一使用 npm`
 - 文件目的：把目前已可用的音檔轉錄主流程整理成正式技術設計，讓需求文件與現況對齊。
 
 ## 1. 設計目標
 - 保持「音檔上傳 -> 背景轉錄 -> 查詢狀態 -> 取得 TXT / SRT」為第一版主流程。
 - 以前後端分離的 task-based API 支撐較長時間的轉錄作業。
 - 讓前端經由 Next.js API route 代理後端，避免直接暴露 backend 位置與跨網域細節。
+- 讓 repo 的 JavaScript 工作流統一以 `npm` 執行，並把 workspace 邊界限制在真正的 Node 專案。
 
 ## 2. 系統/功能架構
 
@@ -33,6 +35,12 @@ Next.js Page
   - 代理 upload、status、result、cancel、tasks、convert-traditional 到 backend。
 - `frontend/src/lib/api-client.ts`
   - 集中處理對 backend 的 HTTP 請求與 base URL。
+- `package.json`
+  - 定義 root npm scripts，並把 npm workspace 限定在 `frontend/`。
+- `frontend/package.json`
+  - 提供前端實際使用的 npm scripts 與相容於 npm 的依賴宣告。
+- `.kickdoc/agent-config.json`
+  - 宣告 UI dev server 指令，需與 root npm scripts 保持一致。
 - `api/src/routers/transcribe.py`
   - 定義 task schema、建立背景任務、管理 task 狀態、提供結果與取消操作。
 - `api/src/workers/transcribe_worker.py`
@@ -58,12 +66,19 @@ Next.js Page
   - 原因：一次轉錄產出兩種主要結果格式，減少重算。
 - 決策 4：前端透過 Next.js API proxy 呼叫 backend。
   - 原因：統一前端呼叫入口，也降低直接暴露 backend URL 的耦合。
+- 決策 5：JavaScript 套件管理統一改用 npm workspace。
+  - 原因：使用者已指定以 `npm` 為正式工具，需讓 repo 指令與文件收斂到單一流程。
+- 決策 6：`api/` 不列入 npm workspace。
+  - 原因：`api/` 為 Python 專案，沒有 `package.json`，若保留在 workspace 會讓 `npm install` 失敗。
+- 決策 7：移除 npm 不支援的 `link:` 依賴宣告。
+  - 原因：現有 `frontend/package.json` 內的 `link:@/hooks/use-toast` 會阻塞 npm 安裝，即使該依賴未被實際使用也必須清除。
 
 ## 6. 錯誤處理與降級策略
 - 若建立 task 失敗，backend 直接回傳錯誤，前端不進入輪詢。
 - 若 task 轉錄失敗，status endpoint 應回傳可辨識失敗狀態，前端顯示錯誤訊息。
 - 若 result 讀取失敗，前端保留失敗狀態並停止把該任務視為成功完成。
 - 若繁體轉換失敗，不影響既有 TXT / SRT 原始結果。
+- 若 npm install 因 workspace 或依賴格式失敗，視為 repo 設定錯誤，需優先修正設定而不是要求維護者改用其他套件管理工具。
 
 ## 7. 測試策略
 - 單元測試
@@ -82,6 +97,13 @@ Next.js Page
 - 轉錄 worker 與前端結果讀取流程仍需持續驗證 race condition 與失敗狀態 contract。
 - README 與部分設定宣告可能尚未完全對齊實作，後續需要補校正。
 - 前端自動化測試目前不足，驗證仍偏向 backend 與人工流程。
+- 若未執行實際 `npm install`，則 lockfile 是否提交仍屬後續決策，當前先以 scripts 與設定一致性為主要交付。
+
+## 10. npm 工作流調整
+- root `package.json` 內所有原本以 `pnpm` 執行的前端 scripts，改為對應的 `npm` workspace 指令。
+- `.kickdoc/agent-config.json` 的 UI dev server command 改為 `npm run dev:all`。
+- `README.md`、`CLAUDE.md`、`frontend/README.md` 內正式指令統一改為 `npm`。
+- `pnpm-lock.yaml` 不再作為正式 lockfile 保留。
 
 ## 9. 未決問題
 - 是否要把影音轉音訊正式納入同一個 MVP spec，或維持為相鄰工具。

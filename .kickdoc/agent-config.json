@@ -2,7 +2,7 @@
   "ui": {
     "devServer": {
       "mode": "command",
-      "command": "pnpm run dev:all"
+      "command": "npm run dev:all"
     }
   }
 }
