@@ -1,8 +1,8 @@
 # E-002 開發工作流一致性
 
 ## 背景與問題
-- 專案目前以 `pnpm` 撰寫 root scripts、README、agent config 與開發指引，但實際 repo 結構包含非 Node 的 `api/` 目錄，與 `npm` workspace 的期待結構不完全一致。
-- 若要把 JavaScript 套件管理統一改成 `npm`，不能只替換指令字串，還需要一起校正 workspace 邊界、文件與 agent config，避免安裝或啟動流程失效。
+- 專案曾混用 `pnpm` 風格安裝產物與 npm 指令，容易讓 lockfile、node_modules 與 dev script 狀態不一致。
+- 本需求已收斂為 npm-only；後續若再引入其他 JavaScript 套件管理工具，需先同步更新正式文件與腳本。
 
 ## 目標與非目標
 
@@ -33,7 +33,7 @@
 ## Requirement List
 
 ### E-002-001 JavaScript 套件管理統一使用 npm
-- 狀態：待驗收
+- 狀態：已完成
 - 類型：已定案
 - repo 中對前端與 root Node 依賴的正式操作指令，需統一以 `npm` 為準。
 - root scripts、README、agent 指引與 `.kickdoc/agent-config.json` 必須同步改為 `npm`。
@@ -41,7 +41,7 @@
 - 若現有前端 `package.json` 內有 npm 不支援的依賴格式，需一併修正後才算完成。
 
 ## 未決問題
-- 是否要在後續補上 `package-lock.json` 並把安裝結果提交進版本控制，需視實際安裝流程是否在本 repo 被要求固定化。
+- 無。
 
 ## 進入 PRD 條件
 - 需求已定案。
