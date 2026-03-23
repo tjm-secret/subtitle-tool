@@ -37,6 +37,7 @@ def normalize_meeting_notes_response(content: str) -> dict:
         "summary": str(payload.get("summary") or "").strip(),
         "discussion_points": [str(item).strip() for item in payload.get("discussion_points") or [] if str(item).strip()],
         "decisions": [str(item).strip() for item in payload.get("decisions") or [] if str(item).strip()],
+        "pending_items": [str(item).strip() for item in payload.get("pending_items") or [] if str(item).strip()],
         "action_items": [str(item).strip() for item in payload.get("action_items") or [] if str(item).strip()],
     }
 
@@ -50,16 +51,29 @@ def build_fallback_meeting_notes(transcript: str) -> dict:
             "summary": "",
             "discussion_points": [],
             "decisions": [],
+            "pending_items": [],
             "action_items": [],
         }
 
     decision_keywords = ("決定", "確認", "採用", "結論", "拍板", "定案")
+    pending_keywords = ("待確認", "未決議", "未定案", "待定", "再確認", "仍需討論", "尚未決定")
     action_keywords = ("待辦", "負責", "下週", "跟進", "action", "安排", "處理", "提交")
 
-    decisions = [sentence for sentence in sentences if any(keyword in sentence for keyword in decision_keywords)]
+    pending_items = [
+        sentence
+        for sentence in sentences
+        if any(keyword in sentence for keyword in pending_keywords)
+    ]
+    decisions = [
+        sentence
+        for sentence in sentences
+        if sentence not in pending_items and any(keyword in sentence for keyword in decision_keywords)
+    ]
     action_items = [sentence for sentence in sentences if any(keyword in sentence for keyword in action_keywords)]
     discussion_points = [
-        sentence for sentence in sentences if sentence not in decisions and sentence not in action_items
+        sentence
+        for sentence in sentences
+        if sentence not in decisions and sentence not in pending_items and sentence not in action_items
     ][:4]
 
     summary_parts = [sentences[0]]
@@ -72,6 +86,7 @@ def build_fallback_meeting_notes(transcript: str) -> dict:
         "summary": " ".join(dict.fromkeys(summary_parts)).strip(),
         "discussion_points": discussion_points,
         "decisions": decisions,
+        "pending_items": pending_items,
         "action_items": action_items,
     }
 
@@ -109,10 +124,12 @@ def generate_meeting_notes(transcript: str, source_name: str | None = None) -> d
                 "content": (
                     "You are a meeting notes assistant.\n"
                     "Return only valid JSON.\n"
-                    "Use exactly these top-level keys: summary, discussion_points, decisions, action_items.\n"
+                    "Use exactly these top-level keys: summary, discussion_points, decisions, pending_items, action_items.\n"
                     "Keep all keys in English.\n"
-                    "Write summary, discussion_points, decisions, and action_items in the primary language of the transcript.\n"
+                    "Write summary, discussion_points, decisions, pending_items, and action_items in the primary language of the transcript.\n"
                     "If the transcript is primarily Chinese, use Traditional Chinese.\n"
+                    "Use pending_items for unresolved questions, undecided topics, or follow-up decisions that are not finalized yet.\n"
+                    "Use action_items only for concrete follow-up actions with an owner or clear next step.\n"
                     "Preserve proper nouns, product names, technical terms, and speaker names in their original language when appropriate.\n"
                     "If a section has no content, return an empty string or empty array.\n"
                     "Do not invent facts that are not supported by the transcript."

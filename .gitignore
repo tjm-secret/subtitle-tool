@@ -32,3 +32,4 @@ __pycache__/
 # === Optional: ignore output builds if not tracked globally ===
 # (These are handled in subproject gitignores usually)
 .worktrees/
+.superpowers/

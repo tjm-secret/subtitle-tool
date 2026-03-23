@@ -38,6 +38,7 @@ This folder is the canonical requirement layer between raw discussion and approv
 ## Current Promotion Snapshot
 - `E-001-001` 核心主流程可用：已定案，已同步進 PRD / TDD
 - `E-001-003` 第一版範圍邊界清楚：已定案，已在 PRD 定義 MVP scope
+- `E-001-004` 音檔轉錄後可生成會議記錄：已定案，已同步進 PRD / TDD / Plan，五區塊 schema 實作進行中
 - `E-002-001` JavaScript 套件管理統一使用 npm：已定案，已同步進 PRD / TDD
 
 ## Epic File Contract

@@ -4,108 +4,166 @@
 - 對應 PRD：`docs/prd.md`
 - 對應 Epic：`docs/requirements/E-001-core-product-experience.md`
 - 對應 Epic：`docs/requirements/E-002-development-workflow-consistency.md`
-- 對應需求：`E-001-001 核心主流程可用`、`E-001-003 第一版範圍邊界清楚`、`E-002-001 JavaScript 套件管理統一使用 npm`
-- 文件目的：把目前已可用的音檔轉錄主流程整理成正式技術設計，讓需求文件與現況對齊。
+- 對應需求：`E-001-001 核心主流程可用`、`E-001-003 第一版範圍邊界清楚`、`E-001-004 音檔轉錄後可生成會議記錄`、`E-002-001 JavaScript 套件管理統一使用 npm`
+- 文件目的：把目前已可用的音檔轉錄主流程、dev mock，以及改由 backend 生成的會議記錄能力整理成正式技術設計。
 
 ## 1. 設計目標
 - 保持「音檔上傳 -> 背景轉錄 -> 查詢狀態 -> 取得 TXT / SRT」為第一版主流程。
-- 以前後端分離的 task-based API 支撐較長時間的轉錄作業。
-- 讓前端經由 Next.js API route 代理後端，避免直接暴露 backend 位置與跨網域細節。
-- 讓 repo 的 JavaScript 工作流統一以 `npm` 執行，並把 workspace 邊界限制在真正的 Node 專案。
+- 在既有逐字稿結果之上提供「會議記錄整理」延伸流程，不新增獨立音檔入口。
+- 讓前端經由 Next.js API route 在 production 繼續代理 backend；在 development 則維持 mock transcribe/task/result 資料，避免本機 Whisper 依賴卡住 UI 驗證。
+- 讓正式的會議記錄整理改由 backend 呼叫 OpenAI-compatible provider 生成，前端只負責觸發、顯示、編修與匯出。
+- 讓整理稿可匯出為 `Markdown` 與 `DOCX`，檔名統一採 `<原檔名去副檔名>_meeting-notes_<YYYY-MM-DD-HHmm>.<ext>`。
+- 讓 `pending_items` 成為正式 schema 欄位，用於承接未決議事項，並與 `action_items` 明確分流。
 
 ## 2. 系統/功能架構
 
 ```text
 Next.js Page
 ├─ Upload / status / result UI
+├─ meeting notes trigger / render UI
 ├─ /api/transcribe proxy routes
-└─ FastAPI /transcribe router
-   ├─ task registry (in-memory)
-   ├─ background process monitor
-   └─ transcribe worker
-      ├─ Faster-Whisper
-      ├─ punctuation restoration
-      └─ TXT / SRT generation
+├─ meeting notes export helpers
+└─ dev mock transcribe store
+   ├─ mock task lifecycle
+   ├─ mock TXT / SRT result
+   └─ mock convert-traditional response
+
+FastAPI
+├─ /transcribe/* task routes
+├─ /transcribe/meeting-notes
+└─ meeting notes service
+   ├─ provider config (OpenAI-compatible)
+   ├─ prompt / schema shaping
+   └─ response normalization
 ```
 
 ## 3. 主要模組責任
 - `frontend/src/app/page.tsx`
   - 提供音檔上傳、語言選擇、輪詢狀態、顯示 TXT / SRT、複製與下載結果。
+  - 在轉錄完成後提供會議記錄整理入口、生成狀態、五區塊結果與 Markdown / DOCX 匯出。
 - `frontend/src/app/api/transcribe/*`
-  - 代理 upload、status、result、cancel、tasks、convert-traditional 到 backend。
-- `frontend/src/lib/api-client.ts`
-  - 集中處理對 backend 的 HTTP 請求與 base URL。
-- `package.json`
-  - 定義 root npm scripts，並把 npm workspace 限定在 `frontend/`。
-- `frontend/package.json`
-  - 提供前端實際使用的 npm scripts 與相容於 npm 的依賴宣告。
-- `.kickdoc/agent-config.json`
-  - 宣告 UI dev server 指令，需與 root npm scripts 保持一致。
+  - 在 production 維持 backend proxy；在 development 針對 transcribe/task/result/cancel/tasks/convert-traditional 直接回傳 mock 資料。
+  - 新增會議記錄 proxy route，development 預設仍可轉發到 backend，失敗時明確回錯。
+- `frontend/src/lib/meeting-notes.js`
+  - 提供整理稿匯出、DOCX blob 建立與檔名 helper。
+- `frontend/src/lib/dev-transcribe-mock.js`
+  - 管理開發模式的 mock task、狀態輪詢、結果內容與簡繁轉換 fallback。
 - `api/src/routers/transcribe.py`
-  - 定義 task schema、建立背景任務、管理 task 狀態、提供結果與取消操作。
-- `api/src/workers/transcribe_worker.py`
-  - 執行 Whisper 轉錄、文字整理、標點還原與 TXT / SRT 輸出。
-- `api/src/utils/text_conversion.py`
-  - 提供簡繁轉換與文字處理輔助能力。
+  - 保留既有轉錄 task API，新增 `POST /transcribe/meeting-notes`。
+- `api/src/services/meeting_notes.py`
+  - 封裝 provider endpoint、API key、model、request payload、schema 解析與錯誤對應。
+- `api/src/models/meeting_notes.py`
+  - 定義 meeting notes request / response schema。
+- `api/tests/test_meeting_notes.py`
+  - 驗證 backend 會議記錄 endpoint、provider 呼叫與錯誤處理。
+- `api/requirements.txt`
+  - 補上 backend 呼叫 OpenAI-compatible API 所需的 HTTP client。
 
 ## 4. 資料流與狀態流
 - 使用者在前端選擇音檔並送出 `POST /api/transcribe`。
-- Next.js route 轉發 multipart request 到 backend `/transcribe`。
-- Backend 建立 task id、啟動背景 process，並把 task state 放入 in-memory registry。
-- 前端定期查詢 `/api/transcribe/{taskId}/status`。
-- 背景 worker 完成後，backend 在 task result 中寫入 `txt` 與 `srt`。
-- 前端在狀態完成後呼叫 `/api/transcribe/{taskId}/result` 讀取結果並渲染。
-- 若使用者需要繁體中文版本，前端可把結果再送往 `/api/transcribe/convert-traditional`。
+- development 下，Next.js route 直接建立 mock task；production 下仍轉發到 backend `/transcribe/`。
+- 前端定期查詢 `/api/transcribe/{taskId}/status`，完成後再讀 `/result` 取得 `txt` / `srt`。
+- 使用者點擊 `產生會議記錄` 時，前端把 `txt`、原始音檔名與必要 metadata 送到 `/api/transcribe/meeting-notes`。
+- Next.js route 轉發到 backend `/transcribe/meeting-notes`。
+- backend `meeting_notes` service 以 OpenAI-compatible chat endpoint 呼叫模型，要求輸出固定五欄位 JSON。
+- backend 將模型回應 normalize 成：
+
+```json
+{
+  "summary": "string",
+  "discussion_points": ["string"],
+  "decisions": ["string"],
+  "pending_items": ["string"],
+  "action_items": ["string"]
+}
+```
+
+- 前端收到結果後渲染五區塊，允許使用者手動編修，再以 helper 匯出 `Markdown` 與 `DOCX`。
 
 ## 5. 關鍵技術決策
-- 決策 1：轉錄採背景任務模型，而非同步請求。
-  - 原因：音檔轉錄耗時不可預期，同步請求容易超時並惡化 UX。
-- 決策 2：task state 目前採 in-memory registry。
-  - 原因：先以最小成本支撐單機 MVP；代價是重啟後狀態不保留，也不適合多實例擴展。
-- 決策 3：TXT 與 SRT 同時由 worker 產生。
-  - 原因：一次轉錄產出兩種主要結果格式，減少重算。
-- 決策 4：前端透過 Next.js API proxy 呼叫 backend。
-  - 原因：統一前端呼叫入口，也降低直接暴露 backend URL 的耦合。
-- 決策 5：JavaScript 套件管理統一改用 npm workspace。
-  - 原因：使用者已指定以 `npm` 為正式工具，需讓 repo 指令與文件收斂到單一流程。
-- 決策 6：`api/` 不列入 npm workspace。
-  - 原因：`api/` 為 Python 專案，沒有 `package.json`，若保留在 workspace 會讓 `npm install` 失敗。
-- 決策 7：移除 npm 不支援的 `link:` 依賴宣告。
-  - 原因：現有 `frontend/package.json` 內的 `link:@/hooks/use-toast` 會阻塞 npm 安裝，即使該依賴未被實際使用也必須清除。
+- 決策 1：轉錄主流程仍保留 task-based 介面。
+  - 原因：前端現有狀態管理、輪詢與結果區都圍繞 task contract 建立，會議記錄不應干擾這條成熟流程。
+- 決策 2：development 的 transcribe/task/result 繼續由 Next.js route mock。
+  - 原因：目前 Python Whisper 在本機開發時仍可能受 `faster_whisper` 依賴影響，前端 demo 需要穩定資料來源。
+- 決策 3：會議記錄整理正式版改由 backend 生成。
+  - 原因：需求已明確要求支援 OpenAI-compatible provider，正式結果不應依賴前端規則式整理。
+- 決策 4：provider 使用 OpenAI-compatible HTTP contract，而不是綁定單一 SDK。
+  - 原因：可同時對接 OpenAI 與 vLLM 類型部署，並減少 SDK 特定限制。
+- 決策 5：整理稿輸出採固定結構化 schema，而不是只回傳自由文字。
+  - 原因：PRD 已固定欄位，schema 化結果更利於前端穩定渲染、測試與匯出。
+- 決策 6：`pending_items` 與 `action_items` 分成兩個獨立欄位。
+  - 原因：未拍板議題不等於已指派待辦，分欄後前端顯示、匯出與後續自動化才不會混淆語意。
 
 ## 6. 錯誤處理與降級策略
-- 若建立 task 失敗，backend 直接回傳錯誤，前端不進入輪詢。
-- 若 task 轉錄失敗，status endpoint 應回傳可辨識失敗狀態，前端顯示錯誤訊息。
-- 若 result 讀取失敗，前端保留失敗狀態並停止把該任務視為成功完成。
-- 若繁體轉換失敗，不影響既有 TXT / SRT 原始結果。
-- 若 npm install 因 workspace 或依賴格式失敗，視為 repo 設定錯誤，需優先修正設定而不是要求維護者改用其他套件管理工具。
+- 若建立轉錄 task 失敗，前端不進入輪詢並顯示明確錯誤訊息。
+- 若 backend 會議記錄 provider 未設定 endpoint / model / API key，`/transcribe/meeting-notes` 回傳 503 與可辨識訊息。
+- 若 provider timeout、回傳非 JSON、或缺少必要欄位，backend 將其轉為 502，前端保留原始 TXT / SRT 並提示可重試。
+- 若逐字稿內容過短或空白，前端不送出請求，直接提示使用者。
+- 若原始音檔名含空白、括號或特殊字元，匯出檔名需先做安全化。
+- 若 DOCX blob 建立失敗，不影響 Markdown 匯出與畫面編修。
 
 ## 7. 測試策略
-- 單元測試
-  - 驗證 TXT / SRT 生成邏輯與時間戳格式。
-  - 驗證文字處理與繁體轉換輔助函式。
-- 整合測試
-  - 驗證 `/transcribe`、`/status`、`/result`、`/cancel` 等 API contract。
-  - 驗證 Next.js proxy routes 與 backend endpoint 對應關係。
+- 前端單元測試
+  - 驗證整理稿匯出格式與檔名 helper。
+- 後端單元 / API 測試
+  - 驗證 `/transcribe/meeting-notes` 會把逐字稿送到 provider。
+  - 驗證 provider 回應會被 normalize 成固定五區塊 schema。
+  - 驗證 `pending_items` 缺值時會被安全 normalize 成空陣列。
+  - 驗證 provider 設定缺失、timeout 與壞格式回應會轉成明確 HTTP 錯誤。
 - 人工驗收
-  - 上傳一個可轉錄音檔。
-  - 確認 UI 會顯示處理中與完成狀態。
-  - 確認可讀到 TXT / SRT，且至少一種格式可下載。
+  - 上傳音檔，確認 UI 可完成 mock transcribe 流程。
+  - 點擊 `產生會議記錄`，確認 backend 返回五區塊結果。
+  - 確認 `下載 Markdown` / `下載 DOCX` 檔名帶原始音檔名與時間戳。
 
 ## 8. 風險與限制
-- task state 目前只存在記憶體，服務重啟後結果不保留。
-- 轉錄 worker 與前端結果讀取流程仍需持續驗證 race condition 與失敗狀態 contract。
-- README 與部分設定宣告可能尚未完全對齊實作，後續需要補校正。
-- 前端自動化測試目前不足，驗證仍偏向 backend 與人工流程。
-- 若未執行實際 `npm install`，則 lockfile 是否提交仍屬後續決策，當前先以 scripts 與設定一致性為主要交付。
+- development 下若 backend 未啟動，會議記錄按鈕會失敗；這是預期行為，因正式生成已移到 backend。
+- OpenAI-compatible provider 雖共用大致 contract，但不同部署對 `response_format` 或 JSON 輸出穩定性可能有差異，service 需保守實作解析。
+- task result 目前仍是一讀即刪；若使用者刷新頁面，需重新取得逐字稿後才能再生整理稿。
+- DOCX 匯出仍在前端完成，長文本文件在低階裝置上可能有額外 blob 建立成本。
 
-## 10. npm 工作流調整
-- root `package.json` 內所有原本以 `pnpm` 執行的前端 scripts，改為對應的 `npm` workspace 指令。
-- `.kickdoc/agent-config.json` 的 UI dev server command 改為 `npm run dev:all`。
-- `README.md`、`CLAUDE.md`、`frontend/README.md` 內正式指令統一改為 `npm`。
-- `pnpm-lock.yaml` 不再作為正式 lockfile 保留。
+## 9. 會議記錄生成設計
+- backend endpoint
+  - `POST /transcribe/meeting-notes`
+  - request:
 
-## 9. 未決問題
-- 是否要把影音轉音訊正式納入同一個 MVP spec，或維持為相鄰工具。
-- task result 是否要改為可重複讀取或持久化，而不是一次性記憶體結果。
-- 轉錄模型與 runtime 設定是否要正式做成可配置能力，而不是只依賴現有硬編碼行為。
+```json
+{
+  "transcript": "string",
+  "source_name": "optional string"
+}
+```
+
+  - response:
+
+```json
+{
+  "summary": "string",
+  "discussion_points": ["string"],
+  "decisions": ["string"],
+  "pending_items": ["string"],
+  "action_items": ["string"]
+}
+```
+
+- provider config
+  - `MEETING_NOTES_API_BASE`
+  - `MEETING_NOTES_API_KEY`
+  - `MEETING_NOTES_MODEL`
+  - 選配：`MEETING_NOTES_TIMEOUT_SECONDS`
+- service 行為
+  - 建立 system / user prompt，要求只回固定 schema JSON。
+  - 呼叫 OpenAI-compatible `/chat/completions`。
+  - 優先解析 JSON；若模型回傳包在 markdown code fence 中，先清理再 parse。
+  - 將空值 normalize 為空字串或空陣列，不把缺欄位直接透傳給前端。
+  - prompt 需明確區分 `pending_items`（未決議事項）與 `action_items`（待辦事項）。
+
+## 10. npm / Python 工作流調整
+- root JavaScript 工作流維持 `npm`。
+- `frontend/package-lock.json` 作為前端實際 lockfile 保留。
+- `api/requirements.txt` 補上 backend HTTP client 套件。
+- `api/env.template` 補上會議記錄 provider 相關環境變數。
+
+## 11. 未決問題
+- provider 是否需要支援 streaming；第一版先不做。
+- 若之後需要「重新生成某一區塊」能力，應擴成局部更新 API 還是完整重算。
+- task result 是否要持久化，避免刷新頁面後無法再次生成會議記錄。

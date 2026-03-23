@@ -18,6 +18,7 @@ def test_normalize_meeting_notes_response_strips_code_fence_and_defaults_missing
     assert result["summary"] == "整理後摘要"
     assert result["discussion_points"] == ["討論 1"]
     assert result["decisions"] == ["決議 1"]
+    assert result["pending_items"] == []
     assert result["action_items"] == []
 
 
@@ -48,6 +49,7 @@ def test_generate_meeting_notes_uses_dev_fallback_when_enabled(monkeypatch):
     assert result["summary"]
     assert isinstance(result["discussion_points"], list)
     assert isinstance(result["decisions"], list)
+    assert isinstance(result["pending_items"], list)
     assert isinstance(result["action_items"], list)
 
 
@@ -90,7 +92,7 @@ def test_generate_meeting_notes_sends_structured_prompt_rules(monkeypatch):
         "choices": [
             {
                 "message": {
-                    "content": '{"summary":"摘要","discussion_points":[],"decisions":[],"action_items":[]}'
+                    "content": '{"summary":"摘要","discussion_points":[],"decisions":[],"pending_items":[],"action_items":[]}'
                 }
             }
         ]
@@ -108,8 +110,11 @@ def test_generate_meeting_notes_sends_structured_prompt_rules(monkeypatch):
 
     assert "Return only valid JSON." in system_content
     assert "Keep all keys in English." in system_content
-    assert "Write summary, discussion_points, decisions, and action_items in the primary language of the transcript." in system_content
+    assert "Use exactly these top-level keys: summary, discussion_points, decisions, pending_items, action_items." in system_content
+    assert "Write summary, discussion_points, decisions, pending_items, and action_items in the primary language of the transcript." in system_content
     assert "If the transcript is primarily Chinese, use Traditional Chinese." in system_content
+    assert "Use pending_items for unresolved questions, undecided topics, or follow-up decisions that are not finalized yet." in system_content
+    assert "Use action_items only for concrete follow-up actions with an owner or clear next step." in system_content
     assert (
         "Preserve proper nouns, product names, technical terms, and speaker names in their original language when appropriate."
         in system_content

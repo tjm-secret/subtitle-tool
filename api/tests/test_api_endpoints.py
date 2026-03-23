@@ -227,6 +227,7 @@ class TestTranscribeEndpoints:
             "summary": "整理後摘要",
             "discussion_points": ["重點討論"],
             "decisions": ["決議事項"],
+            "pending_items": ["未決議事項"],
             "action_items": ["待辦事項"],
         }
 
@@ -243,6 +244,7 @@ class TestTranscribeEndpoints:
         assert data["summary"] == "整理後摘要"
         assert data["discussion_points"] == ["重點討論"]
         assert data["decisions"] == ["決議事項"]
+        assert data["pending_items"] == ["未決議事項"]
         assert data["action_items"] == ["待辦事項"]
 
     def test_generate_meeting_notes_requires_transcript(self, client):

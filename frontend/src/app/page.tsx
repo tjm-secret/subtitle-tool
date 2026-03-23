@@ -82,6 +82,7 @@ interface MeetingNotesDraft {
   summary: string
   discussion_points: string[]
   decisions: string[]
+  pending_items: string[]
   action_items: string[]
 }
 
@@ -521,6 +522,7 @@ export default function AudioTranscriptionPage() {
         summary?: string
         discussion_points?: string[]
         decisions?: string[]
+        pending_items?: string[]
         action_items?: string[]
         detail?: unknown
       }
@@ -538,6 +540,7 @@ export default function AudioTranscriptionPage() {
         summary: payload.summary ?? "",
         discussion_points: payload.discussion_points ?? [],
         decisions: payload.decisions ?? [],
+        pending_items: payload.pending_items ?? [],
         action_items: payload.action_items ?? [],
       })
       setWorkspaceTab("meeting-notes")
@@ -1112,7 +1115,7 @@ export default function AudioTranscriptionPage() {
             <CardContent className="space-y-5 p-5">
               {meetingNotes ? (
                 <>
-                  <div className="grid gap-3 md:grid-cols-4">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                     <div className="rounded-[22px] border border-amber-200/80 bg-white/75 px-4 py-3 shadow-sm">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-amber-700/70">Summary</p>
                       <p className="mt-2 text-2xl font-semibold text-stone-900">{meetingNotes.summary.trim() ? "01" : "00"}</p>
@@ -1127,6 +1130,11 @@ export default function AudioTranscriptionPage() {
                       <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700/70">Decision</p>
                       <p className="mt-2 text-2xl font-semibold text-stone-900">{meetingNotes.decisions.length}</p>
                       <p className="mt-1 text-xs text-stone-600">已整理決議事項</p>
+                    </div>
+                    <div className="rounded-[22px] border border-violet-200/80 bg-white/75 px-4 py-3 shadow-sm">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-violet-700/70">Pending</p>
+                      <p className="mt-2 text-2xl font-semibold text-stone-900">{meetingNotes.pending_items.length}</p>
+                      <p className="mt-1 text-xs text-stone-600">未決議事項條目</p>
                     </div>
                     <div className="rounded-[22px] border border-rose-200/80 bg-white/75 px-4 py-3 shadow-sm">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-rose-700/70">Action</p>
@@ -1195,7 +1203,19 @@ export default function AudioTranscriptionPage() {
                         />
                       </div>
 
-                      <div className="rounded-[24px] border border-rose-200/70 bg-rose-50/90 p-4 shadow-sm sm:col-span-2">
+                      <div className="rounded-[24px] border border-violet-200/70 bg-violet-50/90 p-4 shadow-sm">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-medium text-violet-900">
+                          <AlertCircle className="h-4 w-4" />
+                          未決議事項
+                        </div>
+                        <Textarea
+                          value={meetingNotes.pending_items.join("\n")}
+                          onChange={(event) => updateMeetingNotesList("pending_items", event.target.value)}
+                          className="min-h-[220px] resize-none border-violet-100 bg-white/85 text-sm leading-6 text-slate-800"
+                        />
+                      </div>
+
+                      <div className="rounded-[24px] border border-rose-200/70 bg-rose-50/90 p-4 shadow-sm">
                         <div className="mb-3 flex items-center gap-2 text-sm font-medium text-rose-900">
                           <Clock className="h-4 w-4" />
                           待辦事項

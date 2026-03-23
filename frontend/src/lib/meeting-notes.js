@@ -1,6 +1,7 @@
 const SENTENCE_BREAK = /(?<=[。！？!?])\s*/u
 
 const DECISION_KEYWORDS = ["決定", "確認", "採用", "結論", "拍板", "定案"]
+const PENDING_KEYWORDS = ["待確認", "未決議", "未定案", "待定", "再確認", "仍需討論", "尚未決定", "還沒定案"]
 const ACTION_KEYWORDS = ["待辦", "負責", "下週", "跟進", "action", "安排", "處理", "提交"]
 
 function normalizeTranscript(text) {
@@ -69,15 +70,26 @@ export function buildMeetingNotes(transcript) {
       summary: "",
       discussion_points: [],
       decisions: [],
+      pending_items: [],
       action_items: [],
     }
   }
 
-  const decisions = unique(sentences.filter((sentence) => includesKeyword(sentence, DECISION_KEYWORDS)))
+  const pendingItems = unique(
+    sentences.filter((sentence) => includesKeyword(sentence, PENDING_KEYWORDS)),
+  )
+  const decisions = unique(
+    sentences.filter((sentence) => !pendingItems.includes(sentence) && includesKeyword(sentence, DECISION_KEYWORDS)),
+  )
   const actionItems = unique(sentences.filter((sentence) => includesKeyword(sentence, ACTION_KEYWORDS)))
 
   const discussionPoints = unique(
-    sentences.filter((sentence) => !decisions.includes(sentence) && !actionItems.includes(sentence)).slice(0, 4),
+    sentences
+      .filter(
+        (sentence) =>
+          !decisions.includes(sentence) && !pendingItems.includes(sentence) && !actionItems.includes(sentence),
+      )
+      .slice(0, 4),
   )
 
   const summary = unique([sentences[0], ...discussionPoints.slice(0, 1), ...decisions.slice(0, 1)])
@@ -88,6 +100,7 @@ export function buildMeetingNotes(transcript) {
     summary,
     discussion_points: discussionPoints,
     decisions,
+    pending_items: pendingItems,
     action_items: actionItems,
   }
 }
@@ -120,6 +133,7 @@ export function formatMeetingNotesForExport(meetingNotes) {
     summary: "",
     discussion_points: [],
     decisions: [],
+    pending_items: [],
     action_items: [],
   }
 
@@ -134,6 +148,9 @@ export function formatMeetingNotesForExport(meetingNotes) {
     "",
     "## 決議事項",
     toBulletLines(draft.decisions),
+    "",
+    "## 未決議事項",
+    toBulletLines(draft.pending_items),
     "",
     "## 待辦事項",
     toBulletLines(draft.action_items),
@@ -154,6 +171,7 @@ export async function buildMeetingNotesDocxBlob(meetingNotes) {
     summary: "",
     discussion_points: [],
     decisions: [],
+    pending_items: [],
     action_items: [],
   }
 
@@ -193,6 +211,8 @@ export async function buildMeetingNotesDocxBlob(meetingNotes) {
           ...makeBulletParagraphs(draft.discussion_points),
           makeSectionTitle("決議事項"),
           ...makeBulletParagraphs(draft.decisions),
+          makeSectionTitle("未決議事項"),
+          ...makeBulletParagraphs(draft.pending_items),
           makeSectionTitle("待辦事項"),
           ...makeBulletParagraphs(draft.action_items),
         ],
