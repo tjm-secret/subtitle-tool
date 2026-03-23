@@ -40,6 +40,14 @@
 - npm workspace 只應涵蓋實際存在 `package.json` 的前端工作區，避免把 Python 目錄誤列為 workspace。
 - 若現有前端 `package.json` 內有 npm 不支援的依賴格式，需一併修正後才算完成。
 
+### E-002-002 README 維持為一致且可執行的專案入口
+- 狀態：進行中
+- 類型：已定案
+- `README.md` 必須反映目前正式產品範圍，清楚描述「音檔轉錄 -> TXT / SRT -> 會議記錄」主流程，而不是只描述舊版字幕工具定位。
+- `README.md` 必須以實際存在的 repo 結構、正式文件入口與可執行指令為準，避免保留會漂移的過時範例或錯誤檔名。
+- `README.md` 必須區分快速開始、開發模式、production backend 設定與文件入口，讓新進維護者可快速找到正確流程。
+- 若 README 提及腳本、目錄、agent 指引或產品能力，內容需與 `package.json`、`AGENTS.md`、`docs/prd.md`、`docs/tdd.md` 保持一致。
+
 ## 未決問題
 - 無。
 

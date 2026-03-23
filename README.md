@@ -1,253 +1,216 @@
-# Subtitles Tool Monorepo（字幕工具）
+# Subtitle Tool
 
-這是一個語音轉文字的字幕工具 monorepo，整合：
-* 🎧 api/：使用 FastAPI 與 Faster Whisper 的音訊轉錄後端
-* 🖥️ frontend/：使用 Next.js 15 與 React 19 實作的字幕上傳與顯示介面
+`subtitle-tool` 是一個以 Web 為主的音檔處理工具，主流程聚焦在：
 
-本專案使用 npm workspace 管理前端子模組，並由 root scripts 統一管理前後端常用指令。
+1. 上傳音檔
+2. 取得逐字稿 TXT 與字幕 SRT
+3. 在同一頁把逐字稿整理成結構化會議記錄
 
-## 📁 專案結構
-```
-subtitles-tool/
-├── api/                          # 後端服務（Python FastAPI）
+目前 repo 也保留「影片轉音檔」輔助頁面，但正式 MVP 仍以「音檔轉錄 -> TXT / SRT -> 會議記錄」為核心。
+
+## 核心能力
+
+- 音檔上傳、背景轉錄與任務進度查詢
+- TXT / SRT 結果查看、複製與下載
+- 逐字稿整理成 `摘要`、`重點討論`、`決議事項`、`未決議事項`、`待辦事項`
+- 會議記錄匯出為 `Markdown` 與 `DOCX`
+- 開發模式提供 mock transcribe 流程，前端驗證不必依賴本機 Whisper
+- 額外提供影片轉音檔頁面作為輔助工具
+
+## Repo 結構
+
+```text
+subtitle-tool/
+├── AGENTS.md                         # Repo 工作流程與 agent 規範
+├── README.md                         # 專案入口與操作說明
+├── package.json                      # Root npm scripts
+├── package-lock.json                 # Root lockfile
+├── api/                              # FastAPI backend
+│   ├── env.template                  # API / meeting notes 環境變數模板
 │   ├── requirements.txt
 │   ├── src/
-│   │   ├── whisper_api.py       # API 主入口
-│   │   ├── routers/             # API 路由
-│   │   ├── workers/             # 背景處理任務
-│   │   └── utils/               # 工具函式
-│   └── tests/                   # 測試檔案
-│
-├── frontend/                     # Next.js 前端
-│   ├── public/
-│   ├── src/
-│   │   ├── app/                 # Next.js App Router
-│   │   └── components/          # React 元件
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── package.json                  # root package，使用 npm workspace 管理
-├── CLAUDE.md                     # Claude Code 專案指引
-├── README.md
-└── LICENSE
+│   │   ├── whisper_api.py            # API 入口
+│   │   ├── routers/                  # transcribe / convert routes
+│   │   ├── services/meeting_notes.py # 會議記錄 provider 邏輯
+│   │   └── models/meeting_notes.py   # 會議記錄 schema
+│   └── tests/
+├── frontend/                         # Next.js 15 + React 19 前端
+│   ├── src/app/page.tsx              # 音檔轉錄 / 會議記錄主頁
+│   ├── src/app/video-converter/      # 影片轉音檔頁面
+│   └── src/lib/                      # mock、meeting notes helpers
+└── docs/
+    ├── requirements/                 # Epic 與需求追蹤
+    ├── prd.md                        # 正式產品規格
+    ├── tdd.md                        # 正式技術設計
+    └── plans/                        # 執行計畫
 ```
 
-## 🔧 快速開始
+## 快速開始
 
-### 初始化項目
+### 1. 安裝依賴
 
-1. 安裝依賴：
 ```bash
-# 使用 npm 安裝所有依賴（包括前端和 concurrently）
 npm install
+cd api && pip install -r requirements.txt
 ```
 
-2. 配置環境變量（可選）：
+### 2. 建立 backend 環境變數
+
+如果你只想驗證前端主流程，這一步可以先略過。若要跑真實 backend 或會議記錄生成，先建立 `.env`：
+
 ```bash
-# 複製 API 環境變量模板
 cp api/env.template api/.env
-
-# 編輯 api/.env 文件，調整配置參數
-# 主要配置項目：
-# - MAX_CONCURRENT_TASKS: 轉錄任務並發數（默認 3）
-# - MAX_CONCURRENT_CONVERT_TASKS: 轉換任務並發數（默認 2）
-# - WHISPER_MODEL_SIZE: Whisper 模型大小（默認 base）
-# - WHISPER_DEVICE: 運行設備（cpu/cuda/mps）
 ```
 
-3. 構建項目：
-```bash
-# 構建前端和安裝 API 的 Python 依賴
-npm run build:all
-```
+### 3. 啟動開發環境
 
-4. 啟動開發環境：
+預設開發模式只啟前端，並使用 mock transcribe / meeting notes 流程：
+
 ```bash
-# 同時啟動前端和 API 服務（開發模式）
 npm run dev:all
 ```
 
-這將同時啟動：
-- 前端服務：http://localhost:8002
-- API 服務：http://localhost:8010
+前端會跑在 [http://localhost:8002](http://localhost:8002)。
 
-### 生產環境部署
+## 開發模式
+
+### `npm run dev:all`
+
+- 預設開發入口
+- 只啟動前端
+- `DEV_TRANSCRIBE_MOCK=true`
+- 適合驗證 UI、結果區、會議記錄工作檯與下載流程
+
+### `npm run dev:all:real`
 
 ```bash
-# 啟動生產模式（包含音訊清理服務）
+npm run dev:all:real
+```
+
+- 同時啟動前端與 FastAPI backend
+- 前端：`http://localhost:8002`
+- backend：`http://localhost:8010`
+- 適合驗證真實 transcribe task 流程
+
+### `npm run dev:all:mock-full`
+
+```bash
+npm run dev:all:mock-full
+```
+
+- 啟動前端 mock + backend fallback
+- 適合同時驗證前端主流程與部分 backend 設定
+
+### 常用指令
+
+```bash
+npm run dev:fe
+npm run dev:fe:mock
+npm run dev:api
+npm run dev:api:mock
+npm run build:all
 npm run start:all
 ```
 
-## 📦 npm workspace 設定
+JavaScript 正式工作流一律以 `npm` 為準。
 
-package.json（root）內容範例如下：
-```json
-{
-  "name": "subtitles-tool",
-  "private": true,
-  "workspaces": [
-    "frontend"
-  ],
-  "scripts": {
-    "dev:fe": "npm run dev --workspace frontend -- --port 8002",
-    "dev:api": "uvicorn api.src.whisper_api:app --host 0.0.0.0 --port 8010 --reload",
-    "dev:all": "concurrently \"npm run dev:fe\" \"npm run dev:api\"",
-    "build:fe": "npm install && npm run build --workspace frontend",
-    "build:api": "cd api && pip install -r requirements.txt",
-    "build:all": "npm run build:fe && npm run build:api",
-    "start:fe": "npm run start --workspace frontend -- --port 8002",
-    "start:api": "uvicorn api.src.whisper_api:app --port 8010 --workers 1",
-    "start:all": "concurrently -k \"npm run start:fe\" \"npm run start:api\" \"npm run cleanup:audio\"",
-    "cleanup:audio": "python -m api.src.cleanup_service"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.0"
-  }
-}
-```
+## Production Backend
 
-你可以透過 root 執行 workspace 指令，例如：
-```bash
-npm run dev:fe                          # 只啟動前端開發伺服器
-npm run dev:api                         # 只啟動 API 開發伺服器
-npm run dev:all                         # 同時啟動前後端開發伺服器
-npm run build:fe                        # 只構建前端
-npm run build:api                       # 只安裝 API 依賴
-npm run build:all                       # 構建所有項目
-npm install some-package -w frontend    # 為前端安裝特定包
-```
-
-## 🔧 使用說明
-
-### 一、單獨運行後端（api/）
+正式環境建議把 Python 依賴獨立到 `api/.venv.prod`：
 
 ```bash
-cd api
-pip install -r requirements.txt
-uvicorn src.whisper_api:app --host 0.0.0.0 --port 8010
+python3 -m venv api/.venv.prod
+api/.venv.prod/bin/pip install -r api/requirements.txt
+cp api/env.template api/.env.prod
 ```
 
-POST 測試：
+至少需要設定：
+
 ```bash
-curl -X POST "http://localhost:8010/transcribe/" -F "file=@path/to/audio.mp3"
+MEETING_NOTES_API_BASE=...
+MEETING_NOTES_API_KEY=...
+MEETING_NOTES_MODEL=...
+MEETING_NOTES_DEV_FALLBACK=false
 ```
 
-### 二、單獨運行前端（frontend/）
+若是首次部署，建議先預熱 Whisper 與中文標點模型：
 
 ```bash
-npm install             # 從 root 安裝所有 workspace 相依
-npm run dev:fe          # 啟動前端（http://localhost:8002）
+source api/.venv.prod/bin/activate
+python -c "from faster_whisper import WhisperModel; WhisperModel('large-v3', device='cpu', compute_type='int8')"
+python -c "from transformers import AutoModelForTokenClassification, AutoTokenizer; m='p208p2002/zh-wiki-punctuation-restore'; AutoTokenizer.from_pretrained(m); AutoModelForTokenClassification.from_pretrained(m)"
 ```
 
-## ⚙️ 環境變量配置
+啟動 backend：
 
-項目提供了 API 環境變量模板文件：
-- `api/env.template`：API 配置模板
-
-### 主要配置項目
-
-#### 並發控制
 ```bash
-# 轉錄任務並發數（默認：3）
+cd /Users/steve/Documents/GitHub/subtitle-tool
+source api/.venv.prod/bin/activate
+set -a
+source api/.env.prod
+set +a
+uvicorn api.src.whisper_api:app --host 0.0.0.0 --port 8010 --workers 1
+```
+
+## 環境變數
+
+模板檔在 `api/env.template`。常用項目如下：
+
+### 轉錄與資源控制
+
+```bash
 MAX_CONCURRENT_TASKS=3
-
-# 轉換任務並發數（默認：2）
 MAX_CONCURRENT_CONVERT_TASKS=2
-```
-
-#### Whisper 模型配置
-```bash
-# 模型大小：tiny, base, small, medium, large, large-v2, large-v3
 WHISPER_MODEL_SIZE=base
-
-# 運行設備：cpu, cuda (NVIDIA GPU), mps (Apple Silicon)
 WHISPER_DEVICE=cpu
 ```
 
-#### 文件處理
-```bash
-# 最大文件大小（字節，默認 100MB）
-MAX_FILE_SIZE=104857600
+### 會議記錄 provider
 
-# 分片上傳大小（字節，默認 5MB）
-CHUNK_SIZE=5242880
+```bash
+MEETING_NOTES_API_BASE=
+MEETING_NOTES_API_KEY=
+MEETING_NOTES_MODEL=
+MEETING_NOTES_TIMEOUT_SECONDS=30
 ```
 
-#### 音頻處理
+### 檔案與轉檔
+
 ```bash
-# 默認啟用降噪
+MAX_FILE_SIZE=104857600
+CHUNK_SIZE=5242880
 DEFAULT_DENOISE=false
-
-# 音頻質量：high (320kbps), medium (192kbps), low (128kbps)
 DEFAULT_AUDIO_QUALITY=medium
-
-# 默認音頻格式
 DEFAULT_AUDIO_FORMAT=mp3
 ```
 
-### 使用方式
+## 測試與驗證
 
-1. 複製模板文件：
+前端：
+
 ```bash
-cp api/env.template api/.env
-```
-
-2. 編輯 `api/.env` 文件，取消註釋並設置需要的變量
-
-3. 重啟服務以應用新配置
-
-## 🧪 測試
-
-### 前端測試
-```bash
-# Lint 前端程式碼
 npm run lint --workspace frontend
+node --test frontend/src/lib/meeting-notes.test.js frontend/src/lib/dev-transcribe-mock.test.js
 ```
 
-### 後端測試
+後端：
+
 ```bash
-# 執行所有 Python 測試
-cd api && python run_tests.py
-
-# 執行特定測試類別
-cd api && python run_tests.py api        # API 端點測試
-cd api && python run_tests.py utils      # 工具函式測試
-cd api && python run_tests.py models     # 模型類別測試
-
-# 使用 pytest 直接執行
-cd api && pytest                         # 所有測試
-cd api && pytest tests/test_utils.py -v  # 特定測試檔案
-cd api && pytest -m "unit" -v            # 只執行單元測試
-cd api && pytest -m "api" -v             # 只執行 API 測試
+cd api && pytest
 ```
 
-## 🎯 主要功能
+如果你只是在調整文件，至少確認 `README.md`、`package.json`、`docs/prd.md`、`docs/tdd.md` 之間沒有互相矛盾。
 
-- 🎤 音訊轉文字（支援多種音訊格式）
-- 🎬 影片轉音訊（自動提取音軌）
-- 📝 字幕產生（SRT 格式）
-- 🔊 降噪處理（可選功能）
-- 📊 即時任務進度追蹤
-- 🧹 自動清理臨時檔案
+## 正式文件入口
 
-## 🛠 技術堆疊
+- 需求入口：[docs/requirements/README.md](./docs/requirements/README.md)
+- 產品規格：[docs/prd.md](./docs/prd.md)
+- 技術設計：[docs/tdd.md](./docs/tdd.md)
+- 執行計畫：[docs/plans/README.md](./docs/plans/README.md)
+- Agent 工作規則：[AGENTS.md](./AGENTS.md)
 
-### 後端
-- FastAPI：現代化的 Python Web 框架
-- Faster Whisper：高效能語音辨識引擎
-- FFmpeg：音訊/影片處理
-- Multiprocessing：背景任務處理
+## 補充說明
 
-### 前端
-- Next.js 15：React 框架（App Router）
-- React 19：使用者介面函式庫
-- TypeScript：型別安全
-- Tailwind CSS：樣式框架
-- Radix UI：無障礙元件基礎
-
-## 🧱 建議擴充
-
-* 加入 @types/shared 資料夾來共享 TS 型別
-* 加入 electron/ 或 mobile/ 資料夾實作桌面或行動版本
-* 加入 scripts/ 夾儲存轉檔工具等 CLI 工具
-* 整合更多語言模型支援
+- `.kickdoc/agent-config.json` 目前宣告的 UI dev server 指令是 `npm run dev:all`。
+- `frontend/` 是唯一 npm workspace；`api/` 不是 JavaScript workspace。
+- 若 README、PRD、TDD 與實作出現衝突，請先以 `docs/prd.md` 為準，再同步修正其他文件。

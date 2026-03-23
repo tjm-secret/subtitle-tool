@@ -40,6 +40,7 @@ This folder is the canonical requirement layer between raw discussion and approv
 - `E-001-003` 第一版範圍邊界清楚：已定案，已在 PRD 定義 MVP scope
 - `E-001-004` 音檔轉錄後可生成會議記錄：已定案，已同步進 PRD / TDD / Plan，五區塊 schema 實作進行中
 - `E-002-001` JavaScript 套件管理統一使用 npm：已定案，已同步進 PRD / TDD
+- `E-002-002` README 維持為一致且可執行的專案入口：已定案，準備同步進 PRD / TDD / Plan
 
 ## Epic File Contract
 Each Epic file should contain:

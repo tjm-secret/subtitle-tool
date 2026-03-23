@@ -4,7 +4,7 @@
 - 對應 PRD：`docs/prd.md`
 - 對應 Epic：`docs/requirements/E-001-core-product-experience.md`
 - 對應 Epic：`docs/requirements/E-002-development-workflow-consistency.md`
-- 對應需求：`E-001-001 核心主流程可用`、`E-001-003 第一版範圍邊界清楚`、`E-001-004 音檔轉錄後可生成會議記錄`、`E-002-001 JavaScript 套件管理統一使用 npm`
+- 對應需求：`E-001-001 核心主流程可用`、`E-001-003 第一版範圍邊界清楚`、`E-001-004 音檔轉錄後可生成會議記錄`、`E-002-001 JavaScript 套件管理統一使用 npm`、`E-002-002 README 維持為一致且可執行的專案入口`
 - 文件目的：把目前已可用的音檔轉錄主流程、dev mock，以及改由 backend 生成的會議記錄能力整理成正式技術設計。
 
 ## 1. 設計目標
@@ -58,6 +58,9 @@ FastAPI
   - 驗證 backend 會議記錄 endpoint、provider 呼叫與錯誤處理。
 - `api/requirements.txt`
   - 補上 backend 呼叫 OpenAI-compatible API 所需的 HTTP client。
+- `README.md`
+  - 作為 repo 對外入口，描述正式產品能力、開發模式、production backend 設定與 spec 文件入口。
+  - 避免直接內嵌容易漂移的大段設定範例；若需列指令，以實際 `package.json` scripts 與現有檔案結構為準。
 
 ## 4. 資料流與狀態流
 - 使用者在前端選擇音檔並送出 `POST /api/transcribe`。
@@ -101,6 +104,7 @@ FastAPI
 - 若逐字稿內容過短或空白，前端不送出請求，直接提示使用者。
 - 若原始音檔名含空白、括號或特殊字元，匯出檔名需先做安全化。
 - 若 DOCX blob 建立失敗，不影響 Markdown 匯出與畫面編修。
+- 若 README 中引用的檔名、指令或文件入口與 repo 現況不一致，應優先修正 README，而不是把錯誤內容視為文件權威。
 
 ## 7. 測試策略
 - 前端單元測試
@@ -114,6 +118,7 @@ FastAPI
   - 上傳音檔，確認 UI 可完成 mock transcribe 流程。
   - 點擊 `產生會議記錄`，確認 backend 返回五區塊結果。
   - 確認 `下載 Markdown` / `下載 DOCX` 檔名帶原始音檔名與時間戳。
+  - 重新閱讀 README，確認產品定位、主要指令、repo 結構與文件入口與實際 repo 一致。
 
 ## 8. 風險與限制
 - development 下若 backend 未啟動，會議記錄按鈕會失敗；這是預期行為，因正式生成已移到 backend。
@@ -162,6 +167,7 @@ FastAPI
 - `frontend/package-lock.json` 作為前端實際 lockfile 保留。
 - `api/requirements.txt` 補上 backend HTTP client 套件。
 - `api/env.template` 補上會議記錄 provider 相關環境變數。
+- README 採「產品概覽 -> 快速開始 -> 開發模式 -> production backend -> 文件入口」結構重寫，讓維護者不必從零拼湊操作路徑。
 
 ## 11. 未決問題
 - provider 是否需要支援 streaming；第一版先不做。
